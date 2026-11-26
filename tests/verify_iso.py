@@ -131,6 +131,9 @@ def main(path: str) -> int:
           and "lsxve-log-purge.timer" in read("/lsxve/install-lsxve.sh").decode()
           and b"OnCalendar=weekly" in read("/lsxve/packaging/systemd/lsxve-log-purge.timer"),
           "LSX-VE logs go to /var/log/lsxve (rsyslog, hourly size rotation, emptied weekly, SELinux label)")
+    check(b"blacklist btusb" in read("/lsxve/packaging/etc/lsxve-modprobe-bluetooth.conf")
+          and "/etc/modprobe.d/lsxve-bluetooth.conf" in read("/lsxve/install-lsxve.sh").decode(),
+          "Bluetooth disabled on the host (modprobe blacklist)")
     check(".lsxve-datastore" in ks and ".lsxve-datastore" in gks, "datastore1 directory created on root")
     pk = ks.split("\n%packages", 1)[1].split("\n%end", 1)[0].splitlines()[1:]
     gpk = gks.split("\n%packages", 1)[1].split("\n%end", 1)[0].splitlines()[1:]

@@ -23,7 +23,7 @@ export function openCtConsole(name: string) {
 type Ct = {
   name: string; state: string; ips: string[]; memory_mib: number; memory_used: number | null; cpus: number;
   autostart: boolean; unprivileged: boolean; bridge: string; os: string; description: string; snapshots: number;
-  ipv4: string; gateway: string; mac: string; created: number | null; created_by: string; source: string; error?: string;
+  ipv4: string; gateway: string; mac: string; disk_gib: number | null; created: number | null; created_by: string; source: string; error?: string;
 };
 
 function useCtStatus() {
@@ -114,6 +114,7 @@ export function ContainerList() {
             { key: "cpus", label: "CPU limit", num: true, sort: (r: Ct) => r.cpus, render: (r: Ct) => r.cpus ? `${r.cpus}` : "host" },
             { key: "memory_mib", label: "Memory", num: true, sort: (r: Ct) => r.memory_mib, render: (r: Ct) => (
               <span>{r.memory_used != null ? `${bytes(r.memory_used)} / ` : ""}{r.memory_mib ? mib(r.memory_mib) : "unlimited"}</span>) },
+            { key: "disk_gib", label: "Disk", num: true, sort: (r: Ct) => r.disk_gib ?? 0, render: (r: Ct) => r.disk_gib != null ? `${r.disk_gib} GiB` : <span className="muted">no limit</span> },
             { key: "unprivileged", label: "Type", render: (r: Ct) => r.unprivileged ? "Unprivileged" : <span className="badge">privileged</span> },
             { key: "autostart", label: "Autostart", render: (r: Ct) => r.autostart ? <span className="badge green">Yes</span> : <span className="muted">No</span> },
             { key: "snapshots", label: "Snapshots", num: true, render: (r: Ct) => r.snapshots ? <span><Icon name="snapshot" size={13} /> {r.snapshots}</span> : "" },
@@ -150,6 +151,7 @@ function CreateContainer({ status, onClose }: { status: any; onClose: () => void
   const [file, setFile] = useState(tarballs[0]?.name ?? "");
   const [cpus, setCpus] = useState(1);
   const [memMiB, setMemMiB] = useState(512);
+  const [diskGiB, setDiskGiB] = useState(8);
   const [bridge, setBridge] = useState(bridges.find((b) => b.network === "default")?.name ?? bridges[0]?.name ?? "");
   const [ipMode, setIpMode] = useState<"dhcp" | "static">("dhcp");
   const [ipv4, setIpv4] = useState("");
@@ -185,7 +187,7 @@ function CreateContainer({ status, onClose }: { status: any; onClose: () => void
 
   const submit = async () => {
     const body: any = {
-      name, description: desc, cpus, memory_mib: memMiB, bridge, unprivileged: unpriv, autostart, start,
+      name, description: desc, cpus, memory_mib: memMiB, disk_gib: diskGiB, bridge, unprivileged: unpriv, autostart, start,
       source: srcType === "download" ? { type: "download", distro, release, variant } : { type: "tarball", file },
       ipv4: ipMode === "dhcp" ? "dhcp" : ipv4, gateway: ipMode === "static" ? gw : "",
     };
@@ -252,6 +254,9 @@ function CreateContainer({ status, onClose }: { status: any; onClose: () => void
               <div className="unit-input"><input type="number" min={0} step={128} value={memMiB} onChange={(e) => setMemMiB(Math.max(0, Number(e.target.value) | 0))} /><span>MiB</span></div>
             </Field>
           </div>
+          <Field label="Disk size" help="The root file system is an ext4 disk image of this size on the datastore (thin: space is used as files are written). 0 = no limit, a directory on the datastore.">
+            <div className="unit-input"><input type="number" min={0} max={65536} value={diskGiB} onChange={(e) => setDiskGiB(Math.max(0, Number(e.target.value) | 0))} /><span>GiB</span></div>
+          </Field>
           <Field label="Network bridge" help="eth0 of the container is connected to this bridge.">
             <BridgeSelect bridges={bridges} value={bridge} onChange={setBridge} />
           </Field>
@@ -356,6 +361,7 @@ export function ContainerDetail() {
               <div>Type</div><div>{ct.unprivileged ? "Unprivileged (uid/gid mapped to 100000+)" : "Privileged"}</div>
               <div>Source</div><div>{ct.source || "—"}</div>
               <div>Created</div><div>{ct.created ? `${ts(ct.created)}${ct.created_by ? ` by ${ct.created_by}` : ""}` : "—"}</div>
+              <div>Disk</div><div>{ct.disk_gib != null ? `${ct.disk_gib} GiB (ext4 disk image)` : "no limit (directory on the datastore)"}</div>
               <div>Root filesystem</div><div className="mono small">{ct.rootfs}</div>
               <div>systemd unit</div><div className="mono small">{ct.unit}</div>
               <div>Notes</div><div style={{ whiteSpace: "pre-wrap" }}>{ct.description || <span className="muted">—</span>}</div>

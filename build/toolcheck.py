@@ -17,6 +17,7 @@ REQUIRED: Dict[str, str] = {
     # LXC containers: lxc-* tools, and the "download" template (lxc-download checks tar, xz, wget)
     **{t: "LXC containers" for t in ("lxc-create", "lxc-start", "lxc-stop", "lxc-info", "lxc-ls", "lxc-destroy",
                                       "lxc-copy", "lxc-snapshot", "lxc-freeze", "lxc-unfreeze", "lxc-console")},
+    "rsync": "lxc-copy and lxc-snapshot (container clones and snapshots copy the rootfs with rsync)",
     "tar": "lxc-download template, rootfs tarball import",
     "xz": "lxc-download template (rootfs.tar.xz), .tar.xz import",
     "gzip": ".tar.gz import", "bzip2": ".tar.bz2 import", "zstd": ".tar.zst import",

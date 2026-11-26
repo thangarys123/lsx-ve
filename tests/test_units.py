@@ -627,5 +627,61 @@ class ContainerCgroup2Usage(unittest.TestCase):
             # another container's cgroup is never read
             self.assertEqual(lxc.cgroup2_usage(4242, "web2", str(Path(td) / "proc"), str(Path(td) / "cg")), {})
 
+
+class ContainerDiskSize(unittest.TestCase):
+    """A container can get a fixed disk size: its rootfs is then an ext4 disk image (LXC "loop")."""
+
+    def spec(self, **kw):
+        d = {"name": "web1", "source": {"type": "download", "distro": "debian", "release": "trixie"},
+             "bridge": "br0"}
+        d.update(kw)
+        return lxc.validate_spec(d)
+
+    def test_spec(self):
+        self.assertEqual(self.spec()["disk_gib"], 0)            # API default: directory, no limit
+        self.assertEqual(self.spec(disk_gib=8)["disk_gib"], 8)
+        with self.assertRaises(v.ValidationError):
+            self.spec(disk_gib=-1)
+        with self.assertRaises(v.ValidationError):
+            self.spec(disk_gib=10 ** 6)
+
+    def test_rootfs_kinds(self):
+        self.assertEqual(lxc._rootfs_spec(lxc.parse_config("lxc.rootfs.path = loop:/x/web1/rootdev")),
+                         ("loop", "/x/web1/rootdev"))
+        self.assertEqual(lxc._rootfs_spec(lxc.parse_config("lxc.rootfs.path = dir:/x/web1/rootfs")),
+                         ("dir", "/x/web1/rootfs"))
+        self.assertIsNone(lxc.disk_gib(lxc.parse_config("lxc.rootfs.path = dir:/x/web1/rootfs")))
+
+    def test_backend_and_safety(self):
+        src = (ROOT / "src" / "lsxve" / "ct" / "lxc.py").read_text(encoding="utf-8")
+        self.assertIn('"-B", "loop", "--fstype", "ext4", "--fssize"', src)
+        self.assertIn('"/usr/sbin/mkfs.ext4", "-q", "-F"', src)
+        # an ext4 image is mounted by the host only while the container is stopped, never twice
+        rd = src.split("def _rootfs_dir(name: str):", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('if st != "stopped":', rd)
+        self.assertIn('"-t", "ext4", "-o", "loop,nosuid,nodev"', rd)
+        self.assertIn('"/usr/bin/umount"', rd)
+        # free space is checked before a disk image is created
+        self.assertIn("shutil.disk_usage(base).free", src)
+        # the web console offers the size and shows it
+        ui = (ROOT / "web" / "src" / "pages" / "Containers.tsx").read_text(encoding="utf-8")
+        self.assertIn("disk_gib: diskGiB", ui)
+        self.assertIn('label="Disk size"', ui)
+
+
+class HostHygiene(unittest.TestCase):
+    def test_bluetooth_blacklisted(self):
+        conf = (ROOT / "packaging" / "etc" / "lsxve-modprobe-bluetooth.conf").read_text(encoding="utf-8")
+        self.assertIn("blacklist btusb", conf)
+        self.assertIn("install bluetooth /bin/false", conf)
+        inst = (ROOT / "packaging" / "install-lsxve.sh").read_text(encoding="utf-8")
+        self.assertIn("/etc/modprobe.d/lsxve-bluetooth.conf", inst)
+
+    def test_libvirt_connection_closed_on_shutdown(self):
+        app = (ROOT / "src" / "lsxve" / "api" / "app.py").read_text(encoding="utf-8")
+        self.assertIn("ctx.hv.close()", app)
+        drv = (ROOT / "src" / "lsxve" / "hv" / "driver.py").read_text(encoding="utf-8")
+        self.assertIn("def close(self) -> None:", drv)
+
 if __name__ == "__main__":
     unittest.main()

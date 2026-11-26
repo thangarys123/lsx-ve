@@ -40,6 +40,9 @@ install -m 0644 "$PK/etc/50-lsxve.rules" /etc/polkit-1/rules.d/50-lsxve.rules
 install -m 0644 "$PK/etc/lsxve-firewalld.xml" /usr/lib/firewalld/services/lsxve.xml
 install -m 0644 "$PK/etc/90-lsxve.sysctl" /usr/lib/sysctl.d/90-lsxve.conf
 install -m 0644 "$PK/etc/libvirt-guests.sysconfig" /etc/sysconfig/libvirt-guests
+# no Bluetooth on the hypervisor (laptops: missing firmware, error messages at every boot)
+install -d -m 0755 /etc/modprobe.d
+install -m 0644 "$PK/etc/lsxve-modprobe-bluetooth.conf" /etc/modprobe.d/lsxve-bluetooth.conf
 # never suspend (laptop lid, sleep keys, idle): the host keeps running its VMs
 install -d -m 0755 /etc/systemd/logind.conf.d /etc/systemd/sleep.conf.d
 install -m 0644 "$PK/etc/lsxve-logind.conf" /etc/systemd/logind.conf.d/90-lsxve.conf

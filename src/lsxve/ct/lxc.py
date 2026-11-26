@@ -18,6 +18,7 @@ lists, no shell). Containers live in the LXC path from /etc/lxc/lxc.conf
 """
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import os
@@ -200,9 +201,60 @@ def _write_meta(name: str, meta: dict) -> None:
     _write_atomic(_dir(name) / META, json.dumps(meta, indent=1), 0o600)
 
 
-def _rootfs(items: List[Tuple[str, str]]) -> str:
+def _rootfs_spec(items: List[Tuple[str, str]]) -> Tuple[str, str]:
+    """("dir", directory) or ("loop", image file) from lxc.rootfs.path."""
     r = cfg_get(items, "lxc.rootfs.path", "") or ""
-    return r[4:] if r.startswith("dir:") else r
+    if r.startswith("loop:"):
+        return "loop", r[5:]
+    return "dir", r[4:] if r.startswith("dir:") else r
+
+
+def _rootfs(items: List[Tuple[str, str]]) -> str:
+    """The rootfs directory, or the disk image file of a container with a fixed disk size."""
+    return _rootfs_spec(items)[1]
+
+
+DISK_IMAGE = "rootdev"     # name LXC itself uses for loop-backed containers
+MNT_BASE = config.RUN_DIR / "ct-mnt"
+
+
+@contextlib.contextmanager
+def _rootfs_dir(name: str):
+    """Directory with the container's files, for changes made by the host (root password, network
+    settings). A disk image (fixed disk size) is mounted for the duration; that is only done while
+    the container is stopped, because an ext4 image must never be mounted twice."""
+    items = parse_config((_dir(name) / "config").read_text())
+    kind, path = _rootfs_spec(items)
+    if kind != "loop":
+        yield path
+        return
+    st = _state(name)
+    if st != "stopped":
+        raise CtError("conflict", f"{name} is {st}; its disk image can only be changed while it is stopped")
+    MNT_BASE.mkdir(parents=True, exist_ok=True)
+    os.chmod(MNT_BASE, 0o700)
+    mnt = MNT_BASE / name
+    mnt.mkdir(mode=0o700, exist_ok=True)
+    proc.run(["/usr/bin/mount", "-t", "ext4", "-o", "loop,nosuid,nodev", path, str(mnt)], timeout=120)
+    try:
+        yield str(mnt)
+    finally:
+        proc.run(["/usr/bin/umount", str(mnt)], timeout=120, check=False)
+        try:
+            mnt.rmdir()
+        except OSError:
+            pass
+
+
+def disk_gib(items: List[Tuple[str, str]]) -> Optional[float]:
+    """Size of the disk image in GiB (None: directory rootfs without a size limit)."""
+    kind, path = _rootfs_spec(items)
+    if kind != "loop":
+        return None
+    try:
+        return round(os.stat(path).st_size / 1024 ** 3, 1)
+    except OSError:
+        return None
 
 
 def random_mac() -> str:
@@ -348,7 +400,8 @@ def _summary(name: str, with_info: bool = True) -> dict:
         "mac": cfg_get(items, "lxc.net.0.hwaddr", "") or "",
         "ipv4": cfg_get(items, K_IP4, "") or "",
         "gateway": cfg_get(items, K_GW4, "") or "",
-        "os": os_release(rootfs) or meta.get("source_label", ""),
+        "os": (os_release(rootfs) if _rootfs_spec(items)[0] == "dir" else meta.get("os", "")) or meta.get("source_label", ""),
+        "disk_gib": disk_gib(items),
         "description": meta.get("description", ""),
         "source": meta.get("source_label", ""),
         "created": meta.get("created"),
@@ -640,9 +693,16 @@ def _guest_write(rootfs: str, d: str, name: str, mode: int, data: str, uid: int)
 
 
 def apply_guest_network(name: str) -> List[str]:
-    """Write the container's own network configuration from the LSX-VE settings (static/DHCP)."""
+    """Write the container's own network configuration from the LSX-VE settings (static/DHCP).
+    A container with a disk image gets it at the next start if it is running now."""
     items = parse_config((_dir(name) / "config").read_text())
-    rootfs = _rootfs(items)
+    if _rootfs_spec(items)[0] == "loop" and _state(name) != "stopped":
+        return []
+    with _rootfs_dir(name) as rootfs:
+        return _apply_guest_network_in(name, rootfs, items)
+
+
+def _apply_guest_network_in(name: str, rootfs: str, items: List[Tuple[str, str]]) -> List[str]:
     if not rootfs or not os.path.isdir(rootfs):
         return []
     ip = cfg_get(items, K_IP4) or None
@@ -718,6 +778,8 @@ def validate_spec(spec: dict) -> dict:
             raise ValidationError("source.file", "must be a .tar, .tar.gz, .tar.xz, .tar.zst or .tar.bz2 rootfs archive")
         out["source"] = {"type": "tarball", "file": f}
     out["memory_mib"] = v.integer(spec.get("memory_mib", 512), "memory_mib", 0, 4 * 1024 * 1024)
+    # 0: rootfs is a directory on the datastore (no limit); otherwise an ext4 disk image of that size
+    out["disk_gib"] = v.integer(spec.get("disk_gib", 0) or 0, "disk_gib", 0, 64 * 1024)
     out["cpus"] = v.integer(spec.get("cpus", 1), "cpus", 0, 1024)
     out["bridge"] = v.ifname(spec.get("bridge"), "bridge")
     ip = spec.get("ipv4") or "dhcp"
@@ -748,6 +810,10 @@ def create(spec: dict) -> dict:
     base = Path(lxcpath())
     base.mkdir(parents=True, exist_ok=True)
     os.chmod(base, 0o755)
+    if s["disk_gib"]:
+        free = shutil.disk_usage(base).free
+        if s["disk_gib"] * 1024 ** 3 > free:
+            raise ValidationError("disk_gib", f"only {free / 1024 ** 3:.1f} GiB are free on the datastore of {base}")
     d = _dir(name)
     label = ""
     try:
@@ -761,7 +827,9 @@ def create(spec: dict) -> dict:
             tmp = config.RUN_DIR / f"ct-{name}.conf"
             tmp.write_text(_base_config(name, s["bridge"], s["unprivileged"], include_common=False))
             try:
-                _lxc("lxc-create", name, "-t", "download", "-B", "dir", "-f", str(tmp), "--",
+                backing = (["-B", "loop", "--fstype", "ext4", "--fssize", f"{s['disk_gib']}G"] if s["disk_gib"]
+                           else ["-B", "dir"])
+                _lxc("lxc-create", name, "-t", "download", *backing, "-f", str(tmp), "--",
                      "-d", src["distro"], "-r", src["release"], "-a", ARCH, "--variant", src["variant"],
                      timeout=1800)
             finally:
@@ -772,15 +840,23 @@ def create(spec: dict) -> dict:
             if not f.is_file() or f.is_symlink() or f.parent != config.ISO_DIR:
                 raise ValidationError("source.file", "archive not found in the ISO library")
             d.mkdir(mode=0o755)
-            rootfs = d / "rootfs"
-            rootfs.mkdir(mode=0o755)
             cfg = _base_config(name, s["bridge"], s["unprivileged"], include_common=True)
-            cfg += f"lxc.rootfs.path = dir:{rootfs}\nlxc.uts.name = {name}\n"
+            if s["disk_gib"]:
+                img = d / DISK_IMAGE
+                with open(img, "wb") as fh:          # sparse: blocks are allocated as the container writes
+                    fh.truncate(s["disk_gib"] * 1024 ** 3)
+                os.chmod(img, 0o600)
+                proc.run(["/usr/sbin/mkfs.ext4", "-q", "-F", "-L", name[:16], str(img)], timeout=600)
+                cfg += f"lxc.rootfs.path = loop:{img}\nlxc.uts.name = {name}\n"
+            else:
+                (d / "rootfs").mkdir(mode=0o755)
+                cfg += f"lxc.rootfs.path = dir:{d / 'rootfs'}\nlxc.uts.name = {name}\n"
             _write_atomic(d / "config", cfg)
-            proc.run(["/usr/bin/tar", "-xpf", str(f), "-C", str(rootfs), "--numeric-owner",
-                      "--xattrs", "--xattrs-exclude=security.selinux"], timeout=1800)
-            if s["unprivileged"]:
-                _shift_ownership(str(rootfs), IDMAP_BASE)
+            with _rootfs_dir(name) as rootfs:
+                proc.run(["/usr/bin/tar", "-xpf", str(f), "-C", rootfs, "--numeric-owner",
+                          "--xattrs", "--xattrs-exclude=security.selinux"], timeout=1800)
+                if s["unprivileged"]:
+                    _shift_ownership(rootfs, IDMAP_BASE)
             label = s["source"]["file"]
         changes = _resource_keys(s["memory_mib"], s["cpus"])
         changes.update({K_AUTO: "1" if s["autostart"] else None,
@@ -788,10 +864,13 @@ def create(spec: dict) -> dict:
                         K_GW4: s["gateway"] or None,
                         K_LINK: s["bridge"]})
         set_keys(name, changes)
-        if s["root_password"]:
-            set_root_password(_rootfs(parse_config((d / "config").read_text())), s["root_password"])
+        with _rootfs_dir(name) as rootfs:
+            if s["root_password"]:
+                set_root_password(rootfs, s["root_password"])
+            os_name = os_release(rootfs)
         _write_meta(name, {"description": s["description"], "created": time.time(), "created_by": s["created_by"],
-                           "source": s["source"], "source_label": label})
+                           "source": s["source"], "source_label": label, "os": os_name,
+                           "disk_gib": s["disk_gib"] or None})
     except BaseException:
         if d.exists() and d.parent == Path(lxcpath()):
             LOG.warning("container %s: creation failed, removing %s", name, d)
@@ -862,7 +941,10 @@ def action(name: str, action: str) -> dict:
         elif action == "stop":
             _lxc("lxc-stop", name, "-k", timeout=60)
         else:
-            _lxc("lxc-stop", name, "-r", "-t", "90", timeout=120)
+            # shut down and start through _start(): network settings changed meanwhile are written
+            _lxc("lxc-stop", name, "-t", "90", timeout=120)
+            _wait(name, ("stopped",), 30)
+            _start(name)
             st = _wait(name, ("running",), 30)
             return {"state": st, "message": f"{name} restarted"}
         st = _wait(name, ("stopped",), 30)
@@ -922,7 +1004,8 @@ def update(name: str, changes: dict) -> dict:
     if "root_password" in changes:
         _need_stopped(name, "change the root password")
         pw = v.password(changes["root_password"], "root_password")
-        set_root_password(_rootfs(parse_config((_dir(name) / "config").read_text())), pw)
+        with _rootfs_dir(name) as rootfs:
+            set_root_password(rootfs, pw)
     running = _state(name) in ("running", "frozen")
     msg = f"Container {name} updated"
     if running and (set(keys) - {K_AUTO}):

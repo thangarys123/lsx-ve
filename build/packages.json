@@ -82,7 +82,8 @@
     "xz",
     "gzip",
     "bzip2",
-    "zstd"
+    "zstd",
+    "rsync"
   ],
   "exclude": [
     "^cockpit",

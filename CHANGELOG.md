@@ -10,7 +10,21 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
 
 ## [Unreleased]
 
+### Added
+- **Disk size for containers.** *Create container* has a *Disk size* field (default 8 GiB): the
+  root file system is an ext4 disk image of that size (LXC `loop` backend), for image-server and
+  rootfs-archive containers. 0 keeps the old behaviour (a directory without a limit). The free
+  space of the datastore is checked; the list and the container page show the size.
+- Bluetooth is disabled on the host (`/etc/modprobe.d/lsxve-bluetooth.conf`). Laptop chips
+  without firmware in Rocky Linux only logged errors at every boot.
+
 ### Fixed
+- The API closes its libvirt connection on shutdown; `virtqemud` logged "End of file while
+  reading data: Input/output error" at every restart of `lsxve-api`.
+- `rsync` is a checked requirement and installed explicitly: LXC copies the rootfs with it for
+  container clones and snapshots.
+- *Restart* of a container shuts it down and starts it through LSX-VE, so network settings changed
+  meanwhile are written into the container.
 - **Static IPv4 of a container did not stick.** Images such as Debian trixie start their own
   DHCP client and replace the address LXC set. LSX-VE now also writes the container's own network
   configuration before every start and after a network change: systemd-networkd, netplan,

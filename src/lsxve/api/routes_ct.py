@@ -72,7 +72,7 @@ def register(ctx: Ctx) -> None:
         spec = dict(b) if isinstance(b, dict) else {}
         spec["created_by"] = req.username
         s = lxc.validate_spec(spec)  # fail fast with 422; the agent validates again
-        ctx.audit(req, "ct.create", s["name"], "submitted", source=s["source"], memory_mib=s["memory_mib"],
+        ctx.audit(req, "ct.create", s["name"], "submitted", source=s["source"], memory_mib=s["memory_mib"], disk_gib=s["disk_gib"],
                   cpus=s["cpus"], unprivileged=s["unprivileged"])
         return task("ct.create", f"Create container {s['name']}", s["name"], req,
                     lambda t: agent.call("ct.create", timeout=2000, spec=spec))

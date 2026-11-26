@@ -112,6 +112,18 @@ class Hypervisor:
             self._caps_cache = None
             return c
 
+    def close(self) -> None:
+        """Close the libvirt connection cleanly (on shutdown). An abandoned connection makes
+        virtqemud log "End of file while reading data: Input/output error"."""
+        with self._lock:
+            c, self._conn = self._conn, None
+        if c is None:
+            return
+        try:
+            c.close()
+        except Exception:  # pragma: no cover - libvirt errors on an already broken connection
+            pass
+
     def _agent_cb(self, conn, dom, state, reason, opaque):
         """Guest agent connected/disconnected: refresh guest info (hostname, IPs) in open clients."""
         try:

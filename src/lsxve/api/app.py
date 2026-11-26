@@ -244,6 +244,10 @@ async def amain() -> None:
             t.cancel()
         for s in servers:
             s.close()
+        try:
+            ctx.hv.close()
+        except Exception:  # pragma: no cover
+            LOG.exception("closing the libvirt connection failed")
         LOG.info("shutting down")
 
 

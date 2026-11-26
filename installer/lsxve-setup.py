@@ -642,4 +642,7 @@ except Exception as e:  # show the error instead of a silent anaconda failure
     import traceback
     tty_out.write(traceback.format_exc())
     pause("Press Enter to abort the installation")
+    # non-zero exit: %pre --erroronfail stops Anaconda here with a clear message instead of
+    # continuing without /tmp/lsxve-ks.cfg (a confusing %include error later)
+    sys.exit(1)
     sys.exit(1)

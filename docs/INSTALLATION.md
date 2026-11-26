@@ -17,7 +17,7 @@ Both installers write the same partition table to the chosen disk. Other disks a
 | 1 (`sda1`) | 1 GiB | **boot**: `/boot` |
 | 2 (`sda2`) | 1 GiB | **swap** |
 | 3 (`sda3`) | 32 GiB | **isos**: `/lsxve/iso`, the ISO library |
-| 4 (`sda4`) | 250 MiB | **oslog**: `/var/log/lsxve`, the LSX-VE logs: `lsxve.log` (all `lsxve-*` services) and `hypervisor.log` (libvirt, QEMU, LXC), copied from the journal by rsyslog and rotated at 20 MiB (8 generations, compressed) |
+| 4 (`sda4`) | 250 MiB | **oslog**: `/var/log/lsxve`, the LSX-VE logs: `lsxve.log` (all `lsxve-*` services) and `hypervisor.log` (libvirt, QEMU, LXC), copied from the journal by rsyslog and rotated at 10 MiB (6 compressed generations, checked hourly) |
 | 5 (`sda5`) | 600 MiB / 2 MiB | **firmware boot**: EFI system partition `/boot/efi` (FAT) on UEFI, or the 2 MiB "BIOS boot" partition for GRUB on legacy BIOS |
 | 6 (`sda6`) | rest | **root**: `/`. The local datastore `datastore1` is the directory `/lsxve/datastores/datastore1` on it. |
 

@@ -178,10 +178,14 @@ class DiskLayout(unittest.TestCase):
         self.assertIn('/var/log/lsxve/lsxve.log', rs)
         self.assertIn('$programname startswith "lsxve"', rs)
         lr = (pk / "etc" / "lsxve-logrotate").read_text(encoding="utf-8")
-        self.assertIn("size 20M", lr)
+        self.assertIn("size 10M", lr)
+        self.assertNotIn("delaycompress", lr)
         inst = (pk / "install-lsxve.sh").read_text(encoding="utf-8")
         self.assertIn("/etc/rsyslog.d/40-lsxve-local.conf", inst)
         self.assertIn("/etc/logrotate.d/lsxve", inst)
+        self.assertIn("logrotate.timer.d/90-lsxve.conf", inst)
+        self.assertIn("restorecon -R /var/log/lsxve", inst)
+        self.assertIn("OnCalendar=hourly", (pk / "etc" / "lsxve-logrotate-timer.conf").read_text(encoding="utf-8"))
 
 
 class Validation(unittest.TestCase):

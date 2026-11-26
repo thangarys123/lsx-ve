@@ -11,6 +11,12 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
 ## [Unreleased]
 
 ### Fixed
+- The `%pre` disk step now exits with an error when it fails, so `--erroronfail` stops the
+  installation with the real message instead of a later `%include /tmp/lsxve-ks.cfg` error.
+- `/var/log/lsxve` (its own file system) is labelled `var_log_t` by the install script and by
+  `lsxve-init`. It was unlabelled, so SELinux would have kept rsyslog from writing the LSX-VE logs.
+- Log rotation for `/var/log/lsxve`: 10 MiB, 6 compressed generations, checked hourly
+  (`logrotate.timer` drop-in). With the stock daily run a busy day could fill the 250 MiB partition.
 - **Graphical installer failed at "Configuring storage"** with
   `DBusError: 'NoneType' object has no attribute 'type'`. Installation Destination was hidden,
   but in the GUI only that spoke applies the kickstart partitioning. Storage stayed empty, so

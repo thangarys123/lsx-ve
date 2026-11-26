@@ -4,9 +4,10 @@
 # (images/product.img, boot option inst.profile=lsxve). The administrator
 # chooses:
 #   * the installation disk - in the %pre step on the text console before the GUI
-#     starts (typed device name confirms the erase). LSX-VE uses a fixed layout:
-#       1 boot 1 GiB (/boot; EFI system partition /boot/efi on UEFI), 2 swap 1 GiB,
-#       3 isos 32 GiB (/lsxve/iso), 4 root = rest (/, holds datastore1);
+#     starts (typed device name confirms the erase). LSX-VE uses a fixed GPT layout:
+#       1 /boot 1 GiB, 2 swap 1 GiB, 3 /lsxve/iso 32 GiB, 4 /var/log/lsxve 250 MiB,
+#       5 EFI system partition (UEFI) or BIOS boot, 6 / = rest (holds datastore1).
+#     Installation Destination stays visible: it applies this partitioning in the GUI;
 #   * in the GUI: Network & Host Name, Time & Date, Root Password.
 # Everything else is fixed here.
 # The web console account "admin" is created with the root password.

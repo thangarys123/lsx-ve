@@ -62,7 +62,7 @@ GPT, ext4:
 partition 1  1 GiB         /boot (label lsxve-boot)
 partition 2  1 GiB         swap
 partition 3  32 GiB        /lsxve/iso (label lsxve-iso)
-partition 4  250 MiB       /var/log/lsxve (label lsxve-log; rsyslog rule 40-lsxve-local.conf, logrotate 20M x 8)
+partition 4  250 MiB       /var/log/lsxve (label lsxve-log; rsyslog rule 40-lsxve-local.conf, logrotate 10M x 6, hourly)
 partition 5  600 MiB       /boot/efi (EFI system partition, UEFI) or 2 MiB BIOS boot (legacy BIOS)
 partition 6  rest          / (label lsxve-root) - last, grows with sfdisk -N 6 + resize2fs
 /lsxve/datastores/datastore1   directory on root (marker .lsxve-datastore; libvirt pool "datastore1")

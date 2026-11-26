@@ -63,7 +63,8 @@ def prepare_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
         os.chmod(d, 0o755)
     if proc.which("/usr/sbin/restorecon"):
-        proc.run(["/usr/sbin/restorecon", "-R", "/lsxve", str(config.ETC_DIR), str(config.STATE_DIR)],
+        proc.run(["/usr/sbin/restorecon", "-R", "/lsxve", str(config.ETC_DIR), str(config.STATE_DIR),
+                  str(config.LOG_DIR)],
                  check=False, timeout=300)
 
 

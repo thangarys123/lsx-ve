@@ -48,6 +48,9 @@ install -m 0644 "$PK/etc/lsxve-sleep.conf" /etc/systemd/sleep.conf.d/90-lsxve.co
 install -d -m 0755 /etc/rsyslog.d /etc/logrotate.d
 install -m 0644 "$PK/etc/lsxve-rsyslog.conf" /etc/rsyslog.d/40-lsxve-local.conf
 install -m 0644 "$PK/etc/lsxve-logrotate" /etc/logrotate.d/lsxve
+# check sizes every hour (the stock timer is daily): a busy day must not fill the 250 MiB partition
+install -d -m 0755 /etc/systemd/system/logrotate.timer.d
+install -m 0644 "$PK/etc/lsxve-logrotate-timer.conf" /etc/systemd/system/logrotate.timer.d/90-lsxve.conf
 
 # service account and directories
 getent group libvirt >/dev/null || groupadd -r libvirt
@@ -65,6 +68,9 @@ if command -v semanage >/dev/null 2>&1; then
     semanage fcontext -a -t virt_content_t '/usr/share/lsxve/guest-tools(/.*)?' 2>/dev/null || \
         semanage fcontext -m -t virt_content_t '/usr/share/lsxve/guest-tools(/.*)?'
     restorecon -R /lsxve /usr/lib/lsxve /usr/libexec/lsxve /usr/share/lsxve /etc/lsxve 2>/dev/null || true
+    # the log partition's root is not owned by any package; label it var_log_t so rsyslog may write
+    install -d -m 0750 /var/log/lsxve
+    restorecon -R /var/log/lsxve 2>/dev/null || true
 fi
 
 # product identity

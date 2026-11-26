@@ -34,17 +34,33 @@ QEMU guest agent details, usage, VM hardware and related objects.*
 
 ## Architecture
 
-```
-┌────────────── Browser (React + TypeScript web console, noVNC) ──────────────┐
-│ HTTPS :443  REST /api/v1/*  ·  WebSocket /api/v1/ws (live)  ·  /api/v1/console│
-└───────────────────────────────┬──────────────────────────────────────────────┘
-                     lsxve-api  │  (user "lsxve", no root, CAP_NET_BIND_SERVICE)
-          ┌─────────────────────┼─────────────────────────┐
-          │ libvirt (local unix │ socket, polkit)          │ lsxve-agent (root)
-          ▼                     ▼                          ▼ fixed op allow-list over
-   virtqemud / virtnetworkd / virtstoraged        /run/lsxve/agent.sock (SO_PEERCRED)
-          │                                       NetworkManager · firewalld · chrony
-        QEMU/KVM guests (VNC on 127.0.0.1 only)   sshd · disks/LVM/XFS · SMART · power
+```mermaid
+flowchart TB
+    browser["<b>Browser</b><br/>React + TypeScript web console, noVNC"]
+
+    subgraph host["LSX-VE host"]
+        direction TB
+        api["<b>lsxve-api</b><br/>user lsxve, no root, CAP_NET_BIND_SERVICE<br/>auth, RBAC, REST, WebSocket"]
+
+        subgraph virt["Virtualization"]
+            direction TB
+            libvirt["<b>libvirt</b><br/>virtqemud · virtnetworkd · virtstoraged"]
+            guests["<b>QEMU/KVM guests</b><br/>VNC on 127.0.0.1 only"]
+            libvirt --> guests
+        end
+
+        subgraph priv["Privileged host operations"]
+            direction TB
+            agent["<b>lsxve-agent</b> (root)<br/>fixed operation allow-list"]
+            sys["NetworkManager · firewalld · chrony<br/>sshd · disks/LVM · SMART · power"]
+            agent --> sys
+        end
+
+        api -- "local unix socket, polkit" --> libvirt
+        api -- "/run/lsxve/agent.sock<br/>SO_PEERCRED" --> agent
+    end
+
+    browser -- "HTTPS :443<br/>REST /api/v1/* · WebSocket /api/v1/ws · /api/v1/console" --> api
 ```
 
 ## What you get

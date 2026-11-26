@@ -29,7 +29,7 @@ QEMU guest agent details, usage, VM hardware and related objects.*
 ## Requirements
 
 - x86_64 CPU with Intel VT-x or AMD-V. Nested virtualization works on VMware Workstation/ESXi.
-- At least 4 GiB RAM and a disk of at least 51 GiB.
+- At least 12 GiB RAM and a disk of at least 265 GiB.
 - One wired network adapter for management.
 
 ## Architecture

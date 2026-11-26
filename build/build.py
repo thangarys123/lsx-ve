@@ -101,6 +101,18 @@ def build_repo(cfg: dict, offline: bool) -> list:
             log(l)
         raise SystemExit("dependency resolution failed (see build/work/resolve.log)")
     log(f"LSXVE repository: {len(pkgs)} packages, {sum(p.size for p in pkgs) / 1048576:.1f} MiB")
+    # every program LSX-VE runs must end up installed (@core + packages + dependencies)
+    import toolcheck
+    comps = next((TREE / "Minimal/repodata").glob("*comps*.xml")).read_text(encoding="utf-8")
+    core = toolcheck.core_packages(comps, toolcheck.ks_excludes((ROOT / "installer" / "ks.cfg.in").read_text(encoding="utf-8")))
+    pool = repotool.Pool(repotool.parse_primary(gzip.decompress(prim.read_bytes()), "iso"), pkgs)
+    installed, gone = toolcheck.closure(pool, core + cfg["packages"], cfg["exclude"])
+    missing = gone + toolcheck.missing_tools(installed)
+    if missing:
+        for m in missing:
+            log(f"MISSING TOOL {m}")
+        raise SystemExit("required programs would not be installed on the host (see build/toolcheck.py)")
+    log(f"tool check: {len(toolcheck.REQUIRED)} programs present in the {len(installed)} installed packages")
     out = TREE / "Hypervisor"   # not "LSXVE": would collide with lsxve/ on case-insensitive filesystems
     if out.exists():
         shutil.rmtree(out)

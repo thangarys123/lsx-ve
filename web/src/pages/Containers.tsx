@@ -230,7 +230,7 @@ function CreateContainer({ status, onClose }: { status: any; onClose: () => void
                 </select>
               </Field>
             </div>}
-            <div className="small muted">Images come from {status.image_server} ({status.arch}). The host downloads and GPG-verifies the image, so it needs Internet access.</div>
+            <div className="small muted">Images come from {status.image_server} ({status.arch}). The host downloads the image over HTTPS, so it needs Internet access.</div>
           </>}
           {srcType === "tarball" && <>
             <Field label="Rootfs archive" help="A .tar / .tar.gz / .tar.xz / .tar.zst / .tar.bz2 of a root filesystem, uploaded to the ISO library.">

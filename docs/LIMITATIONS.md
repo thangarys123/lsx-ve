@@ -80,8 +80,9 @@ Expect first-boot issues to show up in Anaconda's `%pre`/`%post` steps or in SEL
   container must be stopped for snapshots, restores and clones. No ZFS/Btrfs/LVM-thin backends.
 * One network interface (eth0, veth on a host bridge). A static IPv4 is set by LXC before the
   container's init starts; a distribution that runs its own DHCP client may add a second address.
-* Images from images.linuxcontainers.org need Internet access from the host (HTTPS and the GPG
-  keyserver on port 80). Offline: upload a rootfs tarball to the ISO library.
+* Images from images.linuxcontainers.org need Internet access from the host (HTTPS). The
+  LXC 4.0.12 download template (EPEL 9) checks only the HTTPS certificate of the image server; it
+  does not GPG-verify the image. Offline: upload a rootfs tarball to the ISO library.
 * All unprivileged containers share the same uid/gid range (100000–165535), as on Proxmox VE.
   Isolation between containers relies on namespaces and cgroups, not on separate ranges.
 * No per-container CPU/memory charts, no bind mounts or device passthrough in the UI, no

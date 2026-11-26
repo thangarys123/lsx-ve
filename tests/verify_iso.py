@@ -177,6 +177,16 @@ def main(path: str) -> int:
             if not pool.providers(r):
                 unres.append(f"{p.name}: {r}")
     check(not unres, "LSXVE requirements satisfiable" + (f" ({unres[:5]})" if unres else ""))
+    # every program LSX-VE runs is installed: @core (from comps) + %packages + dependencies
+    import toolcheck
+    md = ET.fromstring(read("/Minimal/repodata/repomd.xml"))
+    ghref = [d.find("r:location", repotool.NS).get("href") for d in md.findall("r:data", repotool.NS)
+             if d.get("type") == "group"][0]
+    core = toolcheck.core_packages(read(f"/Minimal/{ghref}").decode(), toolcheck.ks_excludes(gks))
+    inst, gone = toolcheck.closure(pool, core + want, [r"^" + x.replace("*", ".*") for x in toolcheck.ks_excludes(gks)])
+    mt = gone + toolcheck.missing_tools(inst)
+    check(not mt, f"all {len(toolcheck.REQUIRED)} programs LSX-VE runs are installed ({len(inst)} packages)"
+          + (f" (missing: {mt})" if mt else ""))
 
     for f in ("/lsxve/install-lsxve.sh", "/lsxve/python/lsxve/api/app.py", "/lsxve/python/lsxve/dcui/main.py",
               "/lsxve/python/lsxve/core/init.py", "/lsxve/web/index.html", "/lsxve/packaging/systemd/lsxve-api.service",

@@ -1,5 +1,7 @@
 """Unit tests for pure-Python parts (run anywhere): python -m unittest tests/test_units.py"""
 import importlib.util
+import json
+import re
 import os
 import struct
 import sys
@@ -502,6 +504,34 @@ class Batch3(unittest.TestCase):
         self.assertIsInstance(hardware.is_laptop(), bool)
         self.assertIn(8 + 2, hardware.LAPTOP_CHASSIS)  # "Notebook"
 
+
+
+class RequiredTools(unittest.TestCase):
+    """Every program the backend, helpers and units run is in build/toolcheck.py REQUIRED, so the
+    build's tool check (installed package closure) covers it."""
+
+    def test_called_programs_are_listed(self):
+        sys.path.insert(0, str(ROOT / "build"))
+        import toolcheck
+        pats = [re.compile(r'"/(?:usr/)?s?bin/([A-Za-z0-9_.+-]+)"'),
+                re.compile(r'(?:run|call|check_output|Popen|check_call|run_text)\(\s*\[\s*"([A-Za-z0-9_.+-]+)"'),
+                re.compile(r'"(lxc-[a-z]+)"'),
+                re.compile(r'Exec\w*=-?/usr/s?bin/([A-Za-z0-9_.+-]+)')]
+        files = (list((ROOT / "src" / "lsxve").rglob("*.py")) + list((ROOT / "packaging" / "bin").iterdir())
+                 + list((ROOT / "packaging" / "systemd").iterdir()))
+        found = set()
+        for f in files:
+            t = f.read_text(encoding="utf-8", errors="replace")
+            for p in pats:
+                found.update(p.findall(t))
+        unlisted = sorted(n for n in found if not n.startswith("lsxve") and n not in toolcheck.REQUIRED)
+        self.assertEqual(unlisted, [], "add these programs to build/toolcheck.py REQUIRED")
+        # lxc-download refuses to run without these (the original "Missing required tool: tar")
+        for t in ("tar", "xz", "wget"):
+            self.assertIn(t, toolcheck.REQUIRED)
+        pk = json.loads((ROOT / "build" / "packages.json").read_text(encoding="utf-8"))["packages"]
+        for n in ("tar", "xz", "gzip", "bzip2", "zstd", "wget"):
+            self.assertIn(n, pk)
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@ lists, no shell). Containers live in the LXC path from /etc/lxc/lxc.conf
   lsxve-ct@<name>.service (lxc-start -F, Delegate=yes, clean lxc-stop on
   host shutdown), so restarting the agent never touches running containers.
 * Sources: an image from images.linuxcontainers.org (LXC "download"
-  template, GPG verified by the template) or a rootfs tarball from the ISO
+  template, fetched over HTTPS; this template version has no GPG check) or a rootfs tarball from the ISO
   library (/lsxve/iso).
 * LSX-VE owns a small set of config keys (memory, CPU, autostart, network);
   everything else in the container's config file is left untouched.

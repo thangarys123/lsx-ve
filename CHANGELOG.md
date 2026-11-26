@@ -11,6 +11,15 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
 ## [Unreleased]
 
 ### Fixed
+- **Container creation failed with `Missing required tool: tar`.** `tar` is not in Rocky's
+  `@core`, and the LXC download template needs it. `tar`, `xz`, `gzip`, `bzip2` and `zstd` are now
+  installed explicitly (all rootfs archive formats the UI accepts).
+- The build now checks that every program LSX-VE runs is installed on the host:
+  `build/toolcheck.py` computes the installed package set (`@core` + packages + dependencies)
+  from the repository metadata and fails the build if a program is missing. `verify_iso.py`
+  repeats the check on the finished ISO, and a unit test keeps the list in sync with the code.
+- Documentation and UI no longer claim that container images are GPG-verified: the LXC 4.0.12
+  download template only uses HTTPS.
 - The `%pre` disk step now exits with an error when it fails, so `--erroronfail` stops the
   installation with the real message instead of a later `%include /tmp/lsxve-ks.cfg` error.
 - `/var/log/lsxve` (its own file system) is labelled `var_log_t` by the install script and by
@@ -184,7 +193,7 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
 
 ### Added
 - **LXC system containers** (LXC 4.0.12 and lxcfs from EPEL 9):
-  - **Create** from images.linuxcontainers.org (downloaded and GPG-verified on the host) or from a
+  - **Create** from images.linuxcontainers.org (downloaded by the host over HTTPS) or from a
     rootfs tarball in the ISO library.
   - **Unprivileged** by default.
   - **Settings:** CPU and memory limits, bridge networking with DHCP or static IPv4, root password,

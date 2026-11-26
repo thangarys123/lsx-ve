@@ -77,7 +77,12 @@
     "nload",
     "rsyslog",
     "logrotate",
-    "net-snmp"
+    "net-snmp",
+    "tar",
+    "xz",
+    "gzip",
+    "bzip2",
+    "zstd"
   ],
   "exclude": [
     "^cockpit",

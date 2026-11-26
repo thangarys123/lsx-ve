@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 700" width="960" height="700" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#60a5fa"/>
+    </marker>
+    <style>
+      .box  { fill: #1a2533; stroke: #3b82f6; stroke-width: 1.5; }
+      .root { fill: #2a2118; stroke: #f59e0b; stroke-width: 1.5; }
+      .grp  { fill: none; stroke: #475569; stroke-width: 1.2; stroke-dasharray: 6 4; }
+      .t    { fill: #f1f5f9; font-size: 17px; font-weight: 600; text-anchor: middle; }
+      .s    { fill: #94a3b8; font-size: 13px; text-anchor: middle; }
+      .g    { fill: #cbd5e1; font-size: 13px; font-weight: 600; letter-spacing: .06em; }
+      .l    { fill: #93c5fd; font-size: 12.5px; font-family: Consolas, Menlo, monospace; }
+      .a    { stroke: #60a5fa; stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+    </style>
+  </defs>
+
+  <rect width="960" height="700" rx="14" fill="#0d1520"/>
+
+  <!-- Browser -->
+  <rect class="box" x="290" y="28" width="380" height="68" rx="8"/>
+  <text class="t" x="480" y="56">Browser</text>
+  <text class="s" x="480" y="79">React + TypeScript web console · noVNC</text>
+
+  <path class="a" d="M480 96 V200"/>
+  <text class="l" x="494" y="134">HTTPS :443</text>
+  <text class="l" x="494" y="152">REST /api/v1/* · WebSocket /api/v1/ws</text>
+  <text class="l" x="494" y="170">/api/v1/console (VNC proxy)</text>
+
+  <!-- Host -->
+  <rect class="grp" x="24" y="186" width="912" height="490" rx="12"/>
+  <text class="g" x="44" y="210">LSX-VE HOST</text>
+
+  <rect class="box" x="280" y="202" width="400" height="88" rx="8"/>
+  <text class="t" x="480" y="230">lsxve-api</text>
+  <text class="s" x="480" y="253">user lsxve · no root · CAP_NET_BIND_SERVICE</text>
+  <text class="s" x="480" y="273">auth · RBAC · REST · WebSocket</text>
+
+  <!-- api -> groups -->
+  <path class="a" d="M390 290 V330 H245 V392"/>
+  <text class="l" x="380" y="322" text-anchor="end">local unix socket · polkit</text>
+  <path class="a" d="M570 290 V330 H715 V392"/>
+  <text class="l" x="580" y="322">/run/lsxve/agent.sock · SO_PEERCRED</text>
+
+  <!-- Virtualization -->
+  <rect class="grp" x="56" y="392" width="378" height="262" rx="10"/>
+  <text class="g" x="74" y="416">VIRTUALIZATION</text>
+  <rect class="box" x="82" y="430" width="326" height="72" rx="8"/>
+  <text class="t" x="245" y="460">libvirt</text>
+  <text class="s" x="245" y="483">virtqemud · virtnetworkd · virtstoraged</text>
+  <path class="a" d="M245 502 V556"/>
+  <rect class="box" x="82" y="558" width="326" height="72" rx="8"/>
+  <text class="t" x="245" y="588">QEMU/KVM guests · LXC</text>
+  <text class="s" x="245" y="611">VNC on 127.0.0.1 only</text>
+
+  <!-- Privileged -->
+  <rect class="grp" x="526" y="392" width="378" height="262" rx="10"/>
+  <text class="g" x="544" y="416">PRIVILEGED HOST OPERATIONS</text>
+  <rect class="root" x="552" y="430" width="326" height="72" rx="8"/>
+  <text class="t" x="715" y="460">lsxve-agent (root)</text>
+  <text class="s" x="715" y="483">fixed operation allow-list</text>
+  <path class="a" d="M715 502 V556"/>
+  <rect class="box" x="552" y="558" width="326" height="72" rx="8"/>
+  <text class="s" x="715" y="588" style="fill:#e2e8f0">NetworkManager · firewalld · chrony</text>
+  <text class="s" x="715" y="610" style="fill:#e2e8f0">sshd · disks/LVM · SMART · power</text>
+</svg>

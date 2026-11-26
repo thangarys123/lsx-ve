@@ -1,0 +1,17 @@
+[Unit]
+Description=LSX-VE ordered VM autostart / autostop
+# started after libvirt, stopped before libvirt-guests and virtqemud (units stop in reverse order)
+Wants=virtqemud.socket
+After=lsxve-init.service lsxve-agent.service virtqemud.socket virtqemud.service virtnetworkd.service virtstoraged.service libvirt-guests.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/lsxve/lsxve-vm-autostart start
+ExecStop=/usr/libexec/lsxve/lsxve-vm-autostart stop
+TimeoutStartSec=infinity
+TimeoutStopSec=3600
+
+[Install]
+WantedBy=multi-user.target

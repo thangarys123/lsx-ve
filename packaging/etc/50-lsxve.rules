@@ -1,0 +1,6 @@
+// LSX-VE: the management service account may manage libvirt (local socket only).
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.libvirt.unix.manage" && subject.user == "lsxve") {
+        return polkit.Result.YES;
+    }
+});

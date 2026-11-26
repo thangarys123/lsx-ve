@@ -1,0 +1,19 @@
+# source media and build outputs
+*.iso
+dist/
+build/cache/
+build/work/
+build/.venv/
+build/work-*.log
+
+# dev-mode state (LSXVE_DEV=1)
+var/
+
+# web
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+
+# python
+__pycache__/
+*.pyc

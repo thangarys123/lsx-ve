@@ -1,0 +1,39 @@
+[Unit]
+Description=LSX-VE management API and web console
+After=lsxve-init.service lsxve-agent.service virtqemud.socket network-online.target
+Wants=lsxve-agent.service virtqemud.socket network-online.target
+Requires=lsxve-init.service
+
+[Service]
+Type=simple
+User=lsxve
+Group=lsxve
+SupplementaryGroups=libvirt systemd-journal
+ExecStart=/usr/libexec/lsxve/lsxve-api
+Restart=always
+RestartSec=2
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/lsxve /etc/lsxve /var/log/lsxve
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

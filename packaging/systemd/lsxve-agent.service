@@ -1,0 +1,22 @@
+[Unit]
+Description=LSX-VE privileged host agent
+After=lsxve-init.service NetworkManager.service
+Requires=lsxve-init.service
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/lsxve/lsxve-agent
+Restart=always
+RestartSec=2
+# Root is required for host configuration; the attack surface is a local
+# Unix socket (0660 root:lsxve, SO_PEERCRED checked) with a fixed op list.
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=no
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

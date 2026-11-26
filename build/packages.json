@@ -1,0 +1,96 @@
+{
+  "upstream": {
+    "baseos": "https://dl.rockylinux.org/pub/rocky/9.9/BaseOS/x86_64/os/",
+    "appstream": "https://dl.rockylinux.org/pub/rocky/9.9/AppStream/x86_64/os/",
+    "extras": {
+      "url": "https://dl.rockylinux.org/pub/rocky/9.9/extras/x86_64/os/",
+      "only": [
+        "epel-release"
+      ]
+    },
+    "epel": {
+      "url": "https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/",
+      "only": [
+        "lxc",
+        "lxc-libs",
+        "lxc-templates",
+        "lxcfs",
+        "htop",
+        "nload"
+      ]
+    }
+  },
+  "packages": [
+    "qemu-kvm-core",
+    "qemu-img",
+    "qemu-kvm-device-display-virtio-gpu",
+    "qemu-kvm-device-display-virtio-gpu-pci",
+    "qemu-kvm-device-display-virtio-vga",
+    "qemu-kvm-device-usb-host",
+    "libvirt-daemon",
+    "libvirt-client",
+    "python3-libvirt",
+    "libvirt-daemon-driver-qemu",
+    "libvirt-daemon-driver-network",
+    "libvirt-daemon-driver-nwfilter",
+    "libvirt-daemon-driver-storage-core",
+    "libvirt-daemon-driver-storage-disk",
+    "libvirt-daemon-driver-storage-logical",
+    "libvirt-daemon-driver-storage-iscsi",
+    "libvirt-daemon-driver-storage-scsi",
+    "libvirt-daemon-driver-nodedev",
+    "libvirt-daemon-driver-secret",
+    "libvirt-daemon-driver-interface",
+    "edk2-ovmf",
+    "swtpm",
+    "swtpm-tools",
+    "python3-dbus",
+    "smartmontools",
+    "nfs-utils",
+    "iscsi-initiator-utils",
+    "lvm2",
+    "parted",
+    "xfsprogs",
+    "e2fsprogs",
+    "tuned",
+    "chrony",
+    "firewalld",
+    "NetworkManager",
+    "openssh-server",
+    "policycoreutils-python-utils",
+    "dmidecode",
+    "pciutils",
+    "iputils",
+    "openssl",
+    "python3",
+    "dnsmasq",
+    "lxc",
+    "lxc-templates",
+    "lxcfs",
+    "gnupg2",
+    "wget",
+    "epel-release",
+    "htop",
+    "mc",
+    "nano",
+    "net-tools",
+    "nload",
+    "rsyslog",
+    "net-snmp"
+  ],
+  "exclude": [
+    "^cockpit",
+    "^webmin",
+    "^libvirt-daemon-driver-storage-rbd$",
+    "^libvirt-daemon-driver-storage-gluster$",
+    "^qemu-kvm-block-rbd$",
+    "^libvirt-daemon-kvm$",
+    "^qemu-kvm$",
+    ".*-devel$",
+    ".*[.]i686$",
+    "^vim-"
+  ],
+  "guest_tools": {
+    "virtio_win_url": "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
+  }
+}

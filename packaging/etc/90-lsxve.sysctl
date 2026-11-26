@@ -1,0 +1,4 @@
+# LSX-VE hypervisor host tuning
+vm.swappiness = 10
+kernel.panic = 10
+net.ipv4.conf.all.rp_filter = 2

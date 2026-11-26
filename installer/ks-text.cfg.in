@@ -1,0 +1,66 @@
+# LSX-VE @VERSION@ installer kickstart - TEXT MODE (console dialog, also for serial/headless consoles)
+#
+# The interactive part (disk, network, host name, administrator) is handled by
+# the %pre script below, which writes /tmp/lsxve-ks.cfg. The base system is
+# Rocky Linux @BASEVER@ (Minimal) plus the LSX-VE hypervisor repository on this
+# media (variant "LSXVE" in .treeinfo).
+
+text
+skipx
+firstboot --disable
+lang en_US.UTF-8
+keyboard --xlayouts=us
+selinux --enforcing
+firewall --enabled --service=ssh --port=443:tcp,80:tcp
+services --enabled=NetworkManager,chronyd,firewalld,sshd,tuned
+reboot --eject
+
+%include /tmp/lsxve-ks.cfg
+
+%packages --exclude-weakdeps --inst-langs=en_US
+@core
+-cockpit*
+-vim*
+-kexec-tools
+@PACKAGES@
+%end
+
+%pre --interpreter=/usr/bin/python3 --erroronfail
+@SETUP@
+%end
+
+%post --nochroot --erroronfail --log=/tmp/lsxve-post-nochroot.log
+set -e
+ROOT="${ANA_INSTALL_PATH:-/mnt/sysimage}"
+[ -d "$ROOT/etc" ] || ROOT=/mnt/sysroot
+MEDIA="$(cat /tmp/lsxve-media)"
+echo "copying LSX-VE payload from $MEDIA to $ROOT"
+rm -rf "$ROOT/var/tmp/lsxve-payload"
+cp -r "$MEDIA/lsxve" "$ROOT/var/tmp/lsxve-payload"
+install -d -m 0750 "$ROOT/etc/lsxve"
+install -m 0600 /tmp/lsxve-admin.json "$ROOT/etc/lsxve/firstboot-admin.json"
+install -m 0600 /tmp/lsxve-hw.json "$ROOT/etc/lsxve/install-hardware.json"
+cp /tmp/lsxve-post-nochroot.log "$ROOT/root/" 2>/dev/null || true
+%end
+
+%post --erroronfail --log=/root/lsxve-install.log
+set -e
+LSXVE_OFFLINE=1 bash /var/tmp/lsxve-payload/install-lsxve.sh /var/tmp/lsxve-payload
+chown lsxve:lsxve /etc/lsxve/firstboot-admin.json /etc/lsxve/install-hardware.json
+rm -rf /var/tmp/lsxve-payload
+
+# local datastore "datastore1" lives on the root partition (fixed LSX-VE disk layout)
+install -d -m 0755 /lsxve/datastores/datastore1 /lsxve/iso
+touch /lsxve/datastores/datastore1/.lsxve-datastore
+
+# product identity in the boot menu
+for f in /boot/loader/entries/*.conf; do
+    [ -f "$f" ] && sed -i -E 's/^title Rocky Linux[^(]*/title LSX-VE @VERSION@ /' "$f"
+done
+sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="LSX-VE"/' /etc/default/grub || true
+grep -q '^GRUB_DISTRIBUTOR' /etc/default/grub || echo 'GRUB_DISTRIBUTOR="LSX-VE"' >> /etc/default/grub
+
+# keep the journal across reboots for diagnostics
+mkdir -p /var/log/journal
+echo "LSX-VE @VERSION@ installed $(date -u +%FT%TZ)" > /etc/lsxve/installed
+%end

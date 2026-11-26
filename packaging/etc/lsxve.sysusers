@@ -1,0 +1,4 @@
+# LSX-VE unprivileged service account
+u lsxve - "LSX-VE management service" /var/lib/lsxve /sbin/nologin
+m lsxve libvirt
+m lsxve systemd-journal

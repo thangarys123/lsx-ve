@@ -1,0 +1,6 @@
+#!/usr/bin/python3 -I
+# LSX-VE launcher - lsxve.api.app
+import sys
+sys.path.insert(0, "/usr/lib/lsxve/python")
+import runpy
+runpy.run_module("lsxve.api.app", run_name="__main__", alter_sys=True)

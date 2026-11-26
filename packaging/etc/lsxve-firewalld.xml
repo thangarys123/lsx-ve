@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <short>LSX-VE</short>
+  <description>LSX-VE web console and management API (HTTPS, plus HTTP redirect).</description>
+  <port protocol="tcp" port="443"/>
+  <port protocol="tcp" port="80"/>
+</service>

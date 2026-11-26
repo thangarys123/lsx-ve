@@ -1,0 +1,15 @@
+[Unit]
+Description=LSX-VE Core host initialisation
+DefaultDependencies=yes
+After=local-fs.target NetworkManager-wait-online.service systemd-modules-load.service
+Wants=NetworkManager-wait-online.service
+Before=lsxve-agent.service lsxve-api.service lsxve-dcui.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/lsxve/lsxve-init
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

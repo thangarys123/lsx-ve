@@ -1,0 +1,8 @@
+d /run/lsxve 0750 root lsxve -
+d /var/lib/lsxve 0750 lsxve lsxve -
+d /var/log/lsxve 0750 lsxve lsxve -
+d /etc/lsxve 0750 lsxve lsxve -
+d /etc/lsxve/tls 0750 lsxve lsxve -
+d /lsxve 0755 root root -
+d /lsxve/iso 0755 root root -
+d /lsxve/datastores 0755 root root -

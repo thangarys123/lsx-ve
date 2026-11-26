@@ -1,0 +1,25 @@
+[Unit]
+Description=LSX-VE live system log on tty11 (Alt+F11)
+After=systemd-journald.service lsxve-dcui.service
+Conflicts=getty@tty11.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/journalctl --follow --boot --lines=200 --no-pager --no-hostname --output=short
+StandardInput=null
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty11
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+Restart=always
+RestartSec=2
+# read-only view of the journal; nothing to write anywhere
+ProtectSystem=strict
+ProtectHome=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+[Unit]
+Description=LSX-VE direct console user interface (tty1)
+After=lsxve-init.service systemd-user-sessions.service plymouth-quit-wait.service
+Conflicts=getty@tty1.service
+Before=getty.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/lsxve/lsxve-dcui
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+Environment=TERM=linux
+Restart=always
+RestartSec=1
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

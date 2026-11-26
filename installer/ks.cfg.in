@@ -1,0 +1,93 @@
+# LSX-VE @VERSION@ installer kickstart - GRAPHICAL MODE (default)
+#
+# Uses the Anaconda graphical installer with the LSX-VE profile and branding
+# (images/product.img, boot option inst.profile=lsxve). The administrator
+# chooses:
+#   * the installation disk - in the %pre step on the text console before the GUI
+#     starts (typed device name confirms the erase). LSX-VE uses a fixed layout:
+#       1 boot 1 GiB (/boot; EFI system partition /boot/efi on UEFI), 2 swap 1 GiB,
+#       3 isos 32 GiB (/lsxve/iso), 4 root = rest (/, holds datastore1);
+#   * in the GUI: Network & Host Name, Time & Date, Root Password.
+# Everything else is fixed here.
+# The web console account "admin" is created with the root password.
+# The base system is Rocky Linux @BASEVER@ (Minimal) plus the LSX-VE hypervisor
+# repository on this media (variant "LSXVE" in .treeinfo).
+
+graphical
+firstboot --disable
+lang en_US.UTF-8
+keyboard --xlayouts=us
+selinux --enforcing
+firewall --enabled --service=ssh --port=443:tcp,80:tcp
+services --enabled=NetworkManager,chronyd,firewalld,sshd,tuned
+reboot --eject
+
+%include /tmp/lsxve-ks.cfg
+
+%packages --exclude-weakdeps --inst-langs=en_US
+@core
+-cockpit*
+-vim*
+-kexec-tools
+@PACKAGES@
+%end
+
+%pre --interpreter=/usr/bin/python3 --erroronfail
+@SETUP@
+%end
+
+%post --nochroot --erroronfail --log=/tmp/lsxve-post-nochroot.log
+set -e
+ROOT="${ANA_INSTALL_PATH:-/mnt/sysimage}"
+[ -d "$ROOT/etc" ] || ROOT=/mnt/sysroot
+MEDIA=""
+for d in /run/install/repo /run/install/sources/*; do
+    if [ -d "$d/lsxve/python" ]; then MEDIA="$d"; break; fi
+done
+if [ -z "$MEDIA" ]; then
+    for m in $(awk '{print $2}' /proc/mounts); do
+        if [ -d "$m/lsxve/python" ]; then MEDIA="$m"; break; fi
+    done
+fi
+[ -n "$MEDIA" ] || { echo "LSX-VE payload not found on the installation media" >&2; exit 1; }
+echo "copying LSX-VE payload from $MEDIA to $ROOT"
+rm -rf "$ROOT/var/tmp/lsxve-payload"
+cp -r "$MEDIA/lsxve" "$ROOT/var/tmp/lsxve-payload"
+install -d -m 0750 "$ROOT/etc/lsxve"
+cp /tmp/lsxve-post-nochroot.log "$ROOT/root/" 2>/dev/null || true
+%end
+
+%post --erroronfail --log=/root/lsxve-install.log
+set -e
+LSXVE_OFFLINE=1 bash /var/tmp/lsxve-payload/install-lsxve.sh /var/tmp/lsxve-payload
+rm -rf /var/tmp/lsxve-payload
+
+# Web console administrator "admin" uses the root password chosen in the installer.
+# The SHA-512 crypt hash is imported once and converted to scrypt at the first login.
+H="$(awk -F: '$1=="root"{print $2}' /etc/shadow)"
+case "$H" in
+    '$6$'*|'$5$'*)
+        python3 -c 'import json,sys; json.dump({"username": "admin", "password_hash": sys.argv[1], "full_name": "Administrator"}, open("/etc/lsxve/firstboot-admin.json", "w"))' "$H"
+        chmod 0600 /etc/lsxve/firstboot-admin.json
+        chown lsxve:lsxve /etc/lsxve/firstboot-admin.json
+        ;;
+    *)
+        echo "root account is locked: a random web admin password will be written to /etc/lsxve/initial-admin-password"
+        ;;
+esac
+
+# local datastore "datastore1" lives on the root partition (fixed LSX-VE disk layout)
+install -d -m 0755 /lsxve/datastores/datastore1 /lsxve/iso
+touch /lsxve/datastores/datastore1/.lsxve-datastore
+
+# product identity in the boot menu
+for f in /boot/loader/entries/*.conf; do
+    [ -f "$f" ] && sed -i -E 's/^title Rocky Linux[^(]*/title LSX-VE @VERSION@ /' "$f"
+done
+sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="LSX-VE"/' /etc/default/grub || true
+grep -q '^GRUB_DISTRIBUTOR' /etc/default/grub || echo 'GRUB_DISTRIBUTOR="LSX-VE"' >> /etc/default/grub
+
+# keep the journal across reboots for diagnostics
+mkdir -p /var/log/journal
+echo "LSX-VE @VERSION@ installed $(date -u +%FT%TZ) (graphical installer)" > /etc/lsxve/installed
+%end

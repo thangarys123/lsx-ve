@@ -1,0 +1,21 @@
+/* LSX-VE branding for the Anaconda graphical installer */
+.logo-sidebar {
+    background-image: url('/usr/share/anaconda/pixmaps/sidebar-bg.png');
+    background-color: #0e1a2d;
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+.logo {
+    background-image: url('/usr/share/anaconda/pixmaps/sidebar-logo.png');
+    background-position: 50% 24px;
+    background-repeat: no-repeat;
+    background-color: transparent;
+}
+
+AnacondaSpokeWindow #nav-box {
+    background-color: #12213a;
+    background-image: url('/usr/share/anaconda/pixmaps/topbar-bg.png');
+    background-repeat: repeat;
+    color: white;
+}

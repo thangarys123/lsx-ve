@@ -1,0 +1,6 @@
+# LSX-VE: per-VM autostart is handled by libvirt; on host shutdown guests are
+# shut down gracefully (ACPI) in parallel and powered off after the timeout.
+ON_BOOT=ignore
+ON_SHUTDOWN=shutdown
+PARALLEL_SHUTDOWN=8
+SHUTDOWN_TIMEOUT=180

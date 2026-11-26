@@ -8,6 +8,15 @@ separately, so they have no tags; 1.0.0 is the first tagged release (`v1.0.0`). 
 what was verified. Unless a line says otherwise, a feature has been checked by unit tests, the API
 smoke test, the dev-mode web UI and the ISO structure check, **not** on a real installed host.
 
+## [Unreleased]
+
+### Fixed
+- **Graphical installer failed at "Configuring storage"** with
+  `DBusError: 'NoneType' object has no attribute 'type'`. Installation Destination was hidden,
+  but in the GUI only that spoke applies the kickstart partitioning. Storage stayed empty, so
+  Anaconda found no boot device. The spoke is visible again and applies the fixed layout on its
+  own; only manual partitioning (Custom, Blivet-GUI) is hidden.
+
 ## [1.0.0] - 2026-11-26
 
 ### Changed
@@ -27,7 +36,7 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
   only formats the partitions (`part --onpart`), because its own allocator would order them
   differently. NVMe disks get `p1` … `p6` names. The minimum disk size is 51 GiB.
 - The graphical installer asks for the disk on a text screen (with typed confirmation) before the
-  GUI starts. *Installation Destination* is hidden.
+  GUI starts. *Installation Destination* is hidden (reverted in Unreleased, it broke storage setup).
 - `datastore1` is a directory on root (`/lsxve/datastores/datastore1`, marker `.lsxve-datastore`),
   no longer an LVM logical volume. LVM is not used for the system any more.
 

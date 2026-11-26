@@ -42,8 +42,10 @@ the small partitions and at least 16 GiB for root). There is no LVM and no custo
    You confirm by typing the device name (for example `sda`). Then the disk is erased and
    partitioned (see *Disk layout*). Press Enter instead to choose again; nothing is written
    before the device name is typed.
-3. The graphical installer opens with LSX-VE branding. The disk, software, installation source and
-   user pages are fixed by LSX-VE and hidden. You set:
+3. The graphical installer opens with LSX-VE branding. The software, installation source and
+   user pages are fixed by LSX-VE and hidden. **Installation Destination** is shown already
+   configured ("Custom partitioning selected") with the layout from step 2; leave it as it is.
+   Manual partitioning is not offered there. You set:
    * **Network & Host Name:** enable the management NIC, DHCP or static address, VLAN, host name.
    * **Time & Date:** time zone and NTP servers.
    * **Root Password.** The web console account is **`admin` with this root password**. It is

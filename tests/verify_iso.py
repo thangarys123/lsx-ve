@@ -231,8 +231,9 @@ def main(path: str) -> int:
     check(not diff, "payload identical to src/ (byte for byte)" + (f" ({diff[:3]})" if diff else ""))
     prod = gzip.decompress(read("/images/product.img"))
     check(prod.startswith(b"070701") and b"Product=LSX-VE" in prod, "product.img (cpio newc) brands installer")
-    check(b"etc/anaconda/conf.d/90-lsxve.conf\0" in prod and b"StorageSpoke" in prod
-          and b"hidden_spokes" in prod, "product.img: Anaconda drop-in (storage spoke hidden, hidden spokes)")
+    check(b"etc/anaconda/conf.d/90-lsxve.conf\0" in prod and b"CustomPartitioningSpoke" in prod
+          and b"    StorageSpoke" not in prod
+          and b"hidden_spokes" in prod, "product.img: Anaconda drop-in (Installation Destination visible, manual partitioning hidden)")
     check(all(n in prod for n in (b"pixmaps/lsxve.css\0", b"pixmaps/sidebar-logo.png\0", b"pixmaps/sidebar-bg.png\0",
                                    b"pixmaps/topbar-bg.png\0")), "product.img: graphical installer branding")
     iso.close()

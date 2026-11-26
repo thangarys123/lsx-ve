@@ -566,8 +566,9 @@ def find_media():
 
 
 def main_gui():
-    """Graphical install: only the disk is chosen here (Installation Destination is hidden in the GUI
-    because LSX-VE uses a fixed partition layout); Anaconda's GUI asks for the rest."""
+    """Graphical install: only the disk is chosen here, because LSX-VE uses a fixed partition layout.
+    The GUI's Installation Destination applies the generated kickstart partitioning (manual
+    partitioning is hidden); Anaconda's GUI asks for the rest."""
     chvt(6)
     d = step_disk(1)
     header("Preparing the installation disk")

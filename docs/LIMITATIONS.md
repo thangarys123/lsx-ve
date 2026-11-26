@@ -78,8 +78,10 @@ Expect first-boot issues to show up in Anaconda's `%pre`/`%post` steps or in SEL
 * Not tested on a real host yet (see QA). The design follows LXC 4.0.12 from EPEL 9.
 * Directory backend only: a snapshot or clone is a full copy of the root filesystem, and the
   container must be stopped for snapshots, restores and clones. No ZFS/Btrfs/LVM-thin backends.
-* One network interface (eth0, veth on a host bridge). A static IPv4 is set by LXC before the
-  container's init starts; a distribution that runs its own DHCP client may add a second address.
+* One network interface (eth0, veth on a host bridge). A static IPv4 is set by LXC and also
+  written into the container's own network configuration before every start (systemd-networkd,
+  netplan, ifupdown, network-scripts or a NetworkManager keyfile, whichever the image has), with
+  the host's DNS servers. Images that configure the network some other way may still run DHCP.
 * Images from images.linuxcontainers.org need Internet access from the host (HTTPS). The
   LXC 4.0.12 download template (EPEL 9) checks only the HTTPS certificate of the image server; it
   does not GPG-verify the image. Offline: upload a rootfs tarball to the ISO library.

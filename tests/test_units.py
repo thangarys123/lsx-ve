@@ -541,5 +541,91 @@ class RequiredTools(unittest.TestCase):
         for n in ("tar", "xz", "gzip", "bzip2", "zstd", "wget"):
             self.assertIn(n, pk)
 
+
+class ContainerGuestNetwork(unittest.TestCase):
+    """Static IPv4 is also written into the container's own network configuration, because images
+    such as Debian trixie run their own DHCP client and drop the address LXC set (seen on a host:
+    configured 10.25.4.10/8, running with 10.6.0.2 from DHCP)."""
+
+    def files(self, probe, ip="10.25.4.10/8", gw="10.0.0.138", dns=("10.0.0.1",), search=("lab.local",)):
+        return {f"{d}/{f}": (mode, data) for d, f, mode, data in
+                lxc.guest_net_files(probe, ip, gw, list(dns), list(search))}
+
+    def test_networkd_static_and_dhcp(self):
+        out = self.files({"etc/systemd/network": True, "etc/resolv.conf": None})
+        mode, data = out["etc/systemd/network/10-lsxve-eth0.network"]
+        self.assertTrue(data.startswith(lxc.GUEST_MARK))
+        for want in ("Name=eth0", "Address=10.25.4.10/8", "Gateway=10.0.0.138", "DNS=10.0.0.1", "Domains=lab.local"):
+            self.assertIn(want, data)
+        self.assertNotIn("etc/resolv.conf", out)   # symlink (systemd-resolved): left alone
+        # back to DHCP: only the file LSX-VE wrote is rewritten
+        out = self.files({"etc/systemd/network": True,
+                          "managed": {"etc/systemd/network/10-lsxve-eth0.network"}}, ip=None, gw=None)
+        self.assertIn("DHCP=true", out["etc/systemd/network/10-lsxve-eth0.network"][1])
+        # DHCP and nothing written before: the image's own files stay untouched
+        self.assertEqual(self.files({"etc/systemd/network": True, "etc/netplan": True,
+                                     "etc/network/interfaces": "auto eth0\niface eth0 inet dhcp\n"},
+                                    ip=None, gw=None), {})
+
+    def test_netplan_ifupdown_ifcfg_keyfile(self):
+        out = self.files({"etc/netplan": True})
+        mode, data = out["etc/netplan/99-lsxve.yaml"]
+        self.assertEqual(mode, 0o600)
+        for want in ("dhcp4: false", "addresses: [10.25.4.10/8]", "via: 10.0.0.138", "addresses: [10.0.0.1]"):
+            self.assertIn(want, data)
+        out = self.files({"etc/network/interfaces": "auto lo\niface lo inet loopback\nauto eth0\niface eth0 inet dhcp\n"})
+        data = out["etc/network/interfaces"][1]
+        self.assertIn("iface eth0 inet static", data)
+        self.assertIn("netmask 255.0.0.0", data)
+        self.assertIn("gateway 10.0.0.138", data)
+        # an interfaces file without eth0 (only lo / source lines) is not ifupdown's job here
+        self.assertEqual(self.files({"etc/network/interfaces": "auto lo\niface lo inet loopback\n"}), {})
+        # EL: ifcfg present -> ifcfg only, no NetworkManager keyfile next to it (two profiles for eth0)
+        out = self.files({"etc/sysconfig/network-scripts/ifcfg-eth0": "BOOTPROTO=dhcp\n",
+                          "etc/NetworkManager/system-connections": True})
+        self.assertIn("PREFIX=8", out["etc/sysconfig/network-scripts/ifcfg-eth0"][1])
+        self.assertIn("BOOTPROTO=none", out["etc/sysconfig/network-scripts/ifcfg-eth0"][1])
+        self.assertNotIn("etc/NetworkManager/system-connections/eth0.nmconnection", out)
+        out = self.files({"etc/NetworkManager/system-connections": True})
+        mode, data = out["etc/NetworkManager/system-connections/eth0.nmconnection"]
+        self.assertEqual(mode, 0o600)
+        self.assertIn("address1=10.25.4.10/8,10.0.0.138", data)
+        # a plain resolv.conf gets the host's name servers with a static address
+        out = self.files({"etc/resolv.conf": "nameserver 10.6.0.1\n"})
+        self.assertIn("nameserver 10.0.0.1", out["etc/resolv.conf"][1])
+
+    def test_host_dns(self):
+        ns, search = lxc.host_dns("# x\nnameserver 127.0.0.53\nnameserver 10.0.0.1\nnameserver 10.0.0.1\n"
+                                  "nameserver fd00::1\nsearch lab.local example.com\n")
+        self.assertEqual(ns, ["10.0.0.1", "fd00::1"])
+        self.assertEqual(search, ["lab.local", "example.com"])
+
+    def test_start_and_update_apply_guest_network(self):
+        src = (ROOT / "src" / "lsxve" / "ct" / "lxc.py").read_text(encoding="utf-8")
+        start = src.split("def _start(name: str) -> None:", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("apply_guest_network(name)", start)
+        upd = src.split("def update(name: str, changes: dict) -> dict:", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("apply_guest_network(name)", upd)
+        # files inside the container are opened relative to directory fds without following links
+        self.assertIn("os.O_NOFOLLOW, dir_fd=fd", src)
+        self.assertIn("os.rename(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)", src)
+
+
+class ContainerCgroup2Usage(unittest.TestCase):
+    def test_reads_payload_cgroup(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            proc = Path(td) / "proc" / "4242"
+            proc.mkdir(parents=True)
+            (proc / "cgroup").write_text("0::/system.slice/lsxve-ct@web1.service/lxc.payload.web1/init.scope\n")
+            cg = Path(td) / "cg" / "system.slice" / "lsxve-ct@web1.service" / "lxc.payload.web1"
+            cg.mkdir(parents=True)
+            (cg / "memory.current").write_text("52428800\n")
+            (cg / "cpu.stat").write_text("usage_usec 1500\nuser_usec 1000\nsystem_usec 500\n")
+            u = lxc.cgroup2_usage(4242, "web1", str(Path(td) / "proc"), str(Path(td) / "cg"))
+            self.assertEqual(u, {"memory_bytes": 52428800, "cpu_ns": 1500000})
+            # another container's cgroup is never read
+            self.assertEqual(lxc.cgroup2_usage(4242, "web2", str(Path(td) / "proc"), str(Path(td) / "cg")), {})
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,14 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
 ## [Unreleased]
 
 ### Fixed
+- **Static IPv4 of a container did not stick.** Images such as Debian trixie start their own
+  DHCP client and replace the address LXC set. LSX-VE now also writes the container's own network
+  configuration before every start and after a network change: systemd-networkd, netplan,
+  ifupdown, network-scripts or a NetworkManager keyfile, with the host's DNS servers (like Proxmox
+  VE). The files are opened through directory file descriptors without following symlinks, and
+  with DHCP only files LSX-VE wrote are changed.
+- Container CPU and memory usage were empty: LXC 4.0's `lxc-info` reads cgroup v1 files, Rocky
+  Linux 9 is cgroup v2 only. They are now read from the container's `lxc.payload.<name>` cgroup.
 - **Containers were reported as "did not start (state unknown)" although they were running.**
   The state was read with `lxc-info -s -H`, which prints only the bare value (`RUNNING`); the
   parser expected `State: RUNNING`. The state check now uses `lxc-info -s` and the parser accepts

@@ -18,6 +18,7 @@ lists, no shell). Containers live in the LXC path from /etc/lxc/lxc.conf
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import random
@@ -276,11 +277,46 @@ def parse_info(text: str) -> dict:
     return out
 
 
+def cgroup2_usage(pid: int, name: str, proc_root: str = "/proc", cg_root: str = "/sys/fs/cgroup") -> dict:
+    """CPU time and memory of a running container on a cgroup2-only host. LXC 4.0's lxc-info reads
+    the cgroup v1 files ("no useable cpuacct controller") and reports neither on Rocky Linux 9."""
+    try:
+        with open(f"{proc_root}/{int(pid)}/cgroup", encoding="utf-8") as f:
+            line = next((l.strip() for l in f if l.startswith("0::")), "")
+    except (OSError, ValueError):
+        return {}
+    parts = line[3:].strip("/").split("/")
+    want = f"lxc.payload.{name}"
+    if want not in parts:
+        return {}
+    base = os.path.join(cg_root, *parts[:parts.index(want) + 1])
+    out: dict = {}
+    try:
+        with open(os.path.join(base, "memory.current"), encoding="utf-8") as f:
+            out["memory_bytes"] = int(f.read().strip())
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(os.path.join(base, "cpu.stat"), encoding="utf-8") as f:
+            for l in f:
+                k, _, val = l.partition(" ")
+                if k == "usage_usec" and val.strip().isdigit():
+                    out["cpu_ns"] = int(val) * 1000
+    except OSError:
+        pass
+    return out
+
+
 def _info(name: str) -> dict:
     cp = _lxc("lxc-info", name, "-H", timeout=15, check=False)
     if cp.returncode != 0:
         return {"state": "unknown", "ips": []}
-    return parse_info(cp.stdout)
+    info = parse_info(cp.stdout)
+    if info.get("pid") and (info.get("cpu_ns") is None or info.get("memory_bytes") is None):
+        for k, val in cgroup2_usage(info["pid"], name).items():
+            if info.get(k) is None:
+                info[k] = val
+    return info
 
 
 def _state(name: str) -> str:
@@ -429,6 +465,214 @@ def _shift_ownership(rootfs: str, offset: int) -> None:
     for dp, dirs, files in os.walk(rootfs, followlinks=False):
         for n in dirs + files:
             one(os.path.join(dp, n))
+
+
+# --------------------------------------------------------------------------- guest network
+# LXC sets the address on eth0 before the container's init runs, but most images start their own
+# DHCP client (systemd-networkd, netplan, ifupdown, NetworkManager) and replace it. For a static
+# IPv4 address LSX-VE therefore also writes the container's own network configuration (like
+# Proxmox VE). Files written by LSX-VE start with GUEST_MARK; with DHCP only those are rewritten.
+GUEST_MARK = "# managed by LSX-VE (container network settings)"
+
+
+def host_dns(text: Optional[str] = None) -> Tuple[List[str], List[str]]:
+    """Name servers and search domains of the host (containers on the same bridge use them)."""
+    if text is None:
+        try:
+            text = Path("/etc/resolv.conf").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+    ns: List[str] = []
+    search: List[str] = []
+    for line in text.splitlines():
+        f = line.split()
+        if len(f) >= 2 and f[0] == "nameserver":
+            try:
+                a = ipaddress.ip_address(f[1])
+            except ValueError:
+                continue
+            if not a.is_loopback and str(a) not in ns:
+                ns.append(str(a))
+        elif f and f[0] in ("search", "domain"):
+            search = [d for d in f[1:] if re.fullmatch(r"[A-Za-z0-9.-]{1,253}", d)]
+    return ns[:3], search[:6]
+
+
+def guest_net_files(probe: Dict[str, object], ip: Optional[str], gw: Optional[str],
+                    dns: List[str], search: List[str]) -> List[Tuple[str, str, int, str]]:
+    """What to write into the container: [(directory, file, mode, content)].
+
+    probe: {"etc/systemd/network": bool (dir exists), "etc/netplan": bool,
+            "etc/NetworkManager/system-connections": bool,
+            "etc/network/interfaces": str|None (content), "etc/sysconfig/network-scripts/ifcfg-eth0": str|None,
+            "etc/resolv.conf": str|None (None also when it is a symlink, e.g. systemd-resolved),
+            "managed": set of relative paths that currently carry GUEST_MARK}
+    ip: "a.b.c.d/nn" for a static address, None for DHCP."""
+    managed = probe.get("managed") or set()
+    out: List[Tuple[str, str, int, str]] = []
+    static = bool(ip)
+    addr = mask = ""
+    prefix = 0
+    if static:
+        iface = ipaddress.ip_interface(ip)
+        addr, prefix, mask = str(iface.ip), iface.network.prefixlen, str(iface.netmask)
+
+    def want(rel: str, present: bool) -> bool:
+        return (static and present) or (not static and rel in managed)
+
+    def add(d: str, f: str, mode: int, lines: List[str]) -> None:
+        out.append((d, f, mode, GUEST_MARK + "\n" + "\n".join(lines) + "\n"))
+
+    # systemd-networkd: the first matching .network file (lexical order) wins; "10-" sorts first
+    if want("etc/systemd/network/10-lsxve-eth0.network", bool(probe.get("etc/systemd/network"))):
+        body = ["[Match]", "Name=eth0", "", "[Network]"]
+        if static:
+            body += [f"Address={ip}"] + ([f"Gateway={gw}"] if gw else []) + [f"DNS={d}" for d in dns]
+            body += [f"Domains={' '.join(search)}"] if search else []
+        else:
+            body += ["DHCP=true"]
+        add("etc/systemd/network", "10-lsxve-eth0.network", 0o644, body)
+    # netplan (Ubuntu): files are merged in lexical order, so 99- overrides the image's 10-lxc.yaml
+    if want("etc/netplan/99-lsxve.yaml", bool(probe.get("etc/netplan"))):
+        y = ["network:", "  version: 2", "  ethernets:", "    eth0:"]
+        if static:
+            y += ["      dhcp4: false", f"      addresses: [{ip}]"]
+            y += ["      routes:", "        - to: default", f"          via: {gw}"] if gw else []
+            if dns or search:
+                y += ["      nameservers:"]
+                y += [f"        addresses: [{', '.join(dns)}]"] if dns else []
+                y += [f"        search: [{', '.join(search)}]"] if search else []
+        else:
+            y += ["      dhcp4: true"]
+        add("etc/netplan", "99-lsxve.yaml", 0o600, y)
+    # ifupdown (Debian without networkd, Alpine): one file, rewritten as a whole
+    ifup = probe.get("etc/network/interfaces")
+    if want("etc/network/interfaces", isinstance(ifup, str) and "eth0" in ifup):
+        t = ["auto lo", "iface lo inet loopback", "", "auto eth0"]
+        if static:
+            t += ["iface eth0 inet static", f"    address {addr}", f"    netmask {mask}"]
+            t += [f"    gateway {gw}"] if gw else []
+        else:
+            t += ["iface eth0 inet dhcp"]
+        add("etc/network", "interfaces", 0o644, t)
+    # network-scripts (EL images; also read by NetworkManager's ifcfg plugin)
+    has_ifcfg = probe.get("etc/sysconfig/network-scripts/ifcfg-eth0") is not None
+    if want("etc/sysconfig/network-scripts/ifcfg-eth0", has_ifcfg):
+        t = ["DEVICE=eth0", "NAME=eth0", "TYPE=Ethernet", "ONBOOT=yes"]
+        if static:
+            t += ["BOOTPROTO=none", f"IPADDR={addr}", f"PREFIX={prefix}"] + ([f"GATEWAY={gw}"] if gw else [])
+            t += [f"DNS{i}={d}" for i, d in enumerate(dns, 1)]
+            t += [f'DOMAIN="{" ".join(search)}"'] if search else []
+        else:
+            t += ["BOOTPROTO=dhcp"]
+        add("etc/sysconfig/network-scripts", "ifcfg-eth0", 0o644, t)
+    # NetworkManager keyfile (newer EL/Fedora images without ifcfg)
+    if want("etc/NetworkManager/system-connections/eth0.nmconnection",
+            bool(probe.get("etc/NetworkManager/system-connections")) and not has_ifcfg):
+        t = ["[connection]", "id=eth0", "type=ethernet", "interface-name=eth0", "", "[ipv4]"]
+        if static:
+            t += ["method=manual", f"address1={ip}" + (f",{gw}" if gw else "")]
+            t += [f"dns={';'.join(dns)};"] if dns else []
+            t += [f"dns-search={';'.join(search)};"] if search else []
+        else:
+            t += ["method=auto"]
+        t += ["", "[ipv6]", "method=auto"]
+        add("etc/NetworkManager/system-connections", "eth0.nmconnection", 0o600, t)
+    # resolv.conf only when it is a plain file (a symlink means systemd-resolved, fed by networkd)
+    if static and dns and probe.get("etc/resolv.conf") is not None:
+        add("etc", "resolv.conf", 0o644, [f"nameserver {d}" for d in dns] + ([f"search {' '.join(search)}"] if search else []))
+    return out
+
+
+def _guest_dir(rootfs: str, rel: str) -> Optional[int]:
+    """fd of rootfs/rel, opened component by component without following symlinks (the rootfs
+    belongs to the container and may contain hostile links)."""
+    fd = os.open(rootfs, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in [p for p in rel.split("/") if p]:
+            nfd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nfd
+        return fd
+    except OSError:
+        os.close(fd)
+        return None
+
+
+def _guest_read(rootfs: str, rel: str) -> Optional[str]:
+    """Content of a regular file (not a symlink) in the container, or None."""
+    d, _, name = rel.rpartition("/")
+    dfd = _guest_dir(rootfs, d)
+    if dfd is None:
+        return None
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dfd)
+    except OSError:
+        return None
+    finally:
+        os.close(dfd)
+    with os.fdopen(fd, "rb") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            return None
+        return f.read(65536).decode("utf-8", errors="replace")
+
+
+def _guest_write(rootfs: str, d: str, name: str, mode: int, data: str, uid: int) -> None:
+    dfd = _guest_dir(rootfs, d)
+    if dfd is None:
+        raise OSError(f"{d} is missing or a symlink in the container")
+    tmp = f".{name}.lsxve-tmp"
+    try:
+        try:
+            os.unlink(tmp, dir_fd=dfd)
+        except FileNotFoundError:
+            pass
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=dfd)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+            f.flush()
+            os.fchown(f.fileno(), uid, uid)
+            os.fchmod(f.fileno(), mode)
+        # rename replaces a symlink itself, never its target
+        os.rename(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+    finally:
+        os.close(dfd)
+
+
+def apply_guest_network(name: str) -> List[str]:
+    """Write the container's own network configuration from the LSX-VE settings (static/DHCP)."""
+    items = parse_config((_dir(name) / "config").read_text())
+    rootfs = _rootfs(items)
+    if not rootfs or not os.path.isdir(rootfs):
+        return []
+    ip = cfg_get(items, K_IP4) or None
+    gw = cfg_get(items, K_GW4) or None
+    managed = set()
+    probe: Dict[str, object] = {"managed": managed}
+    for rel in ("etc/systemd/network", "etc/netplan", "etc/NetworkManager/system-connections"):
+        fd = _guest_dir(rootfs, rel)
+        probe[rel] = fd is not None
+        if fd is not None:
+            os.close(fd)
+    for rel in ("etc/network/interfaces", "etc/sysconfig/network-scripts/ifcfg-eth0", "etc/resolv.conf",
+                "etc/systemd/network/10-lsxve-eth0.network", "etc/netplan/99-lsxve.yaml",
+                "etc/NetworkManager/system-connections/eth0.nmconnection"):
+        text = _guest_read(rootfs, rel)
+        probe[rel] = text
+        if text is not None and text.startswith(GUEST_MARK):
+            managed.add(rel)
+    dns, search = host_dns()
+    uid = IDMAP_BASE if any(k == "lxc.idmap" for k, _ in items) else 0
+    written = []
+    for d, fname, mode, data in guest_net_files(probe, ip, gw, dns, search):
+        try:
+            _guest_write(rootfs, d, fname, mode, data, uid)
+            written.append(f"/{d}/{fname}")
+        except OSError as e:
+            LOG.warning("container %s: cannot write /%s/%s: %s", name, d, fname, e)
+    if written:
+        LOG.info("container %s: network configuration (%s) written to %s", name, ip or "DHCP", ", ".join(written))
+    return written
 
 
 def set_root_password(rootfs: str, password: str) -> None:
@@ -586,6 +830,10 @@ def _lxc_log_tail(name: str, lines: int = 12) -> str:
 
 def _start(name: str) -> None:
     unit = unit_name(name)
+    try:
+        apply_guest_network(name)
+    except OSError as e:  # never block a start because of the guest's files
+        LOG.warning("container %s: network configuration not written: %s", name, e)
     proc.run(["/usr/bin/systemctl", "reset-failed", unit], timeout=15, check=False)
     proc.run(["/usr/bin/systemctl", "start", "--no-block", unit], timeout=30)
 
@@ -662,6 +910,11 @@ def update(name: str, changes: dict) -> dict:
         keys[K_GW4] = v.ip_address(gw, "gateway", 4) if gw and keys[K_IP4] else None
     if keys:
         set_keys(name, keys)
+    if K_IP4 in keys or K_GW4 in keys:
+        try:
+            apply_guest_network(name)
+        except OSError as e:
+            LOG.warning("container %s: network configuration not written: %s", name, e)
     if "description" in changes:
         meta = _read_meta(name)
         meta["description"] = v.text(changes["description"], "description", 1000)

@@ -1,6 +1,7 @@
 # LSX-VE logs live on their own 250 MiB partition (/var/log/lsxve): rotate by size so the
 # partition never fills up. logrotate.timer runs hourly on LSX-VE (90-lsxve.conf drop-in).
 # Per file at most: the live log (10 MiB + one hour of growth) and 6 compressed generations.
+# lsxve-log-purge.timer additionally empties the whole partition every 7 days.
 /var/log/lsxve/*.log {
     size 10M
     rotate 6

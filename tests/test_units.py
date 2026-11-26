@@ -185,6 +185,14 @@ class DiskLayout(unittest.TestCase):
         self.assertIn("/etc/logrotate.d/lsxve", inst)
         self.assertIn("logrotate.timer.d/90-lsxve.conf", inst)
         self.assertIn("restorecon -R /var/log/lsxve", inst)
+        self.assertIn("lsxve-log-purge.timer", inst)
+        self.assertIn('"$PK"/systemd/*.timer', inst)
+        tm = (pk / "systemd" / "lsxve-log-purge.timer").read_text(encoding="utf-8")
+        self.assertIn("OnCalendar=weekly", tm)
+        self.assertIn("Persistent=true", tm)
+        sv = (pk / "systemd" / "lsxve-log-purge.service").read_text(encoding="utf-8")
+        self.assertIn("RequiresMountsFor=/var/log/lsxve", sv)
+        self.assertIn("-xdev", sv)
         self.assertIn("OnCalendar=hourly", (pk / "etc" / "lsxve-logrotate-timer.conf").read_text(encoding="utf-8"))
 
 

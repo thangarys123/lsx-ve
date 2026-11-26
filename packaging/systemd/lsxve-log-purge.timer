@@ -1,0 +1,11 @@
+[Unit]
+Description=LSX-VE: empty the log partition /var/log/lsxve every 7 days
+
+[Timer]
+OnCalendar=weekly
+# a host that was off at that time empties the partition at the next boot
+Persistent=true
+AccuracySec=10m
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=LSX-VE: empty the log partition /var/log/lsxve (weekly)
+Documentation=file:///usr/share/doc/lsxve/INSTALLATION.md
+RequiresMountsFor=/var/log/lsxve
+
+[Service]
+Type=oneshot
+# rotated and other files are deleted; the live *.log files are truncated, so rsyslog keeps
+# writing to them (omfile appends) without a restart. lost+found is left alone.
+ExecStart=/usr/bin/find /var/log/lsxve -xdev -mindepth 1 -maxdepth 1 -type f ! -name "*.log" -delete
+ExecStart=/usr/bin/find /var/log/lsxve -xdev -mindepth 1 -maxdepth 1 -type f -name "*.log" -exec /usr/bin/truncate -s 0 {} +
+ExecStartPost=-/usr/bin/systemctl kill -s HUP rsyslog.service

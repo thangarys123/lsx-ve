@@ -125,8 +125,12 @@ def main(path: str) -> int:
           "fixed GPT layout: boot 1G, swap 1G, isos 32G, oslog 250M, ESP/BIOS boot, root last")
     check("rsyslog" in gks.split("services --enabled=", 1)[1].split("\n", 1)[0]
           and "40-lsxve-local.conf" in read("/lsxve/install-lsxve.sh").decode()
-          and "logrotate.d/lsxve" in read("/lsxve/install-lsxve.sh").decode(),
-          "LSX-VE logs go to /var/log/lsxve (rsyslog rule, size-based logrotate)")
+          and "logrotate.d/lsxve" in read("/lsxve/install-lsxve.sh").decode()
+          and "logrotate.timer.d/90-lsxve.conf" in read("/lsxve/install-lsxve.sh").decode()
+          and "restorecon -R /var/log/lsxve" in read("/lsxve/install-lsxve.sh").decode()
+          and "lsxve-log-purge.timer" in read("/lsxve/install-lsxve.sh").decode()
+          and b"OnCalendar=weekly" in read("/lsxve/packaging/systemd/lsxve-log-purge.timer"),
+          "LSX-VE logs go to /var/log/lsxve (rsyslog, hourly size rotation, emptied weekly, SELinux label)")
     check(".lsxve-datastore" in ks and ".lsxve-datastore" in gks, "datastore1 directory created on root")
     pk = ks.split("\n%packages", 1)[1].split("\n%end", 1)[0].splitlines()[1:]
     gpk = gks.split("\n%packages", 1)[1].split("\n%end", 1)[0].splitlines()[1:]

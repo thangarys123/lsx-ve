@@ -17,6 +17,11 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
   `lsxve-init`. It was unlabelled, so SELinux would have kept rsyslog from writing the LSX-VE logs.
 - Log rotation for `/var/log/lsxve`: 10 MiB, 6 compressed generations, checked hourly
   (`logrotate.timer` drop-in). With the stock daily run a busy day could fill the 250 MiB partition.
+
+### Added
+- `lsxve-log-purge.timer` empties the log partition `/var/log/lsxve` every 7 days (weekly,
+  `Persistent=true`, so a host that was off catches up at boot). Rotated files are deleted and the
+  live logs are truncated, so rsyslog keeps writing. The journal is not affected.
 - **Graphical installer failed at "Configuring storage"** with
   `DBusError: 'NoneType' object has no attribute 'type'`. Installation Destination was hidden,
   but in the GUI only that spoke applies the kickstart partitioning. Storage stayed empty, so

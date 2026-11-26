@@ -32,7 +32,7 @@ echo "$VERSION" > /usr/share/lsxve/VERSION
 for b in api agent init dcui vm-autostart; do install -m 0755 "$PK/bin/lsxve-$b" /usr/libexec/lsxve/lsxve-$b; done
 install -m 0755 "$PK/bin/lsxve-admin" /usr/sbin/lsxve-admin
 
-install -m 0644 "$PK"/systemd/*.service /usr/lib/systemd/system/
+install -m 0644 "$PK"/systemd/*.service "$PK"/systemd/*.timer /usr/lib/systemd/system/
 install -m 0644 "$PK/etc/lsxve.sysusers" /usr/lib/sysusers.d/lsxve.conf
 install -m 0644 "$PK/etc/lsxve.tmpfiles" /usr/lib/tmpfiles.d/lsxve.conf
 install -d -m 0755 /etc/polkit-1/rules.d
@@ -95,7 +95,7 @@ done
 systemctl enable virtqemud.service virtlogd.socket virtlockd.socket 2>/dev/null || true
 systemctl enable libvirt-guests.service 2>/dev/null || true
 
-systemctl enable lsxve-init.service lsxve-agent.service lsxve-api.service lsxve-dcui.service lsxve-syslog-console.service lsxve-vm-autostart.service
+systemctl enable lsxve-init.service lsxve-agent.service lsxve-api.service lsxve-dcui.service lsxve-syslog-console.service lsxve-vm-autostart.service lsxve-log-purge.timer
 
 # LXC containers: started per container as lsxve-ct@NAME.service by lsxve-agent (which also does
 # autostart), so the stock lxc.service / lxc-net (lxcbr0) stay off; lxcfs gives containers their

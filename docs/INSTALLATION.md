@@ -14,16 +14,24 @@ Both installers write the same partition table to the chosen disk. Other disks a
 
 | Partition | Size | Use |
 |---|---|---|
-| 1 (`sda1`) | 1 GiB | **boot**: `/boot` (ext4) |
+| 1 (`sda1`) | 1 GiB | **boot**: `/boot` |
 | 2 (`sda2`) | 1 GiB | **swap** |
-| 3 (`sda3`) | 32 GiB | **isos**: `/lsxve/iso` (ext4), the ISO library |
-| 4 (`sda4`) | rest | **root**: `/` (ext4). The local datastore `datastore1` is the directory `/lsxve/datastores/datastore1` on it. |
-| 5 (`sda5`) | 600 MiB | UEFI only: **EFI system partition** `/boot/efi` (FAT) at the end of the disk. The firmware finds it by its type, not its position. |
+| 3 (`sda3`) | 32 GiB | **isos**: `/lsxve/iso`, the ISO library |
+| 4 (`sda4`) | 250 MiB | **oslog**: `/var/log/lsxve`, the LSX-VE logs: `lsxve.log` (all `lsxve-*` services) and `hypervisor.log` (libvirt, QEMU, LXC), copied from the journal by rsyslog and rotated at 20 MiB (8 generations, compressed) |
+| 5 (`sda5`) | 600 MiB / 2 MiB | **firmware boot**: EFI system partition `/boot/efi` (FAT) on UEFI, or the 2 MiB "BIOS boot" partition for GRUB on legacy BIOS |
+| 6 (`sda6`) | rest | **root**: `/`. The local datastore `datastore1` is the directory `/lsxve/datastores/datastore1` on it. |
 
-All file systems are ext4. BIOS hosts get an MBR (msdos) partition table with exactly the four
-partitions 1-4. UEFI hosts get GPT with the EFI system partition as partition 5. A BIOS host with a
-disk larger than 2 TiB gets GPT plus a 2 MiB "BIOS boot" partition 5 at the end of the disk. NVMe disks are named `nvme0n1p1` … `nvme0n1p4`. The disk must be at least
-50 GiB (1 + 1 + 32 + 16 GiB minimum for root). There is no LVM and no custom partitioning.
+All file systems are ext4 and the partition table is always GPT (BIOS and UEFI). Root is the
+last partition, so after enlarging the disk (for example a virtual disk) it grows in place:
+
+```
+echo ", +" | sfdisk --no-reread -N 6 /dev/sda   # move the end of partition 6 to the end of the disk
+partx -u /dev/sda
+resize2fs /dev/sda6                               # ext4 grows online
+```
+
+NVMe disks are named `nvme0n1p1` … `nvme0n1p6`. The disk must be at least 51 GiB (1 + 1 + 32 GiB,
+the small partitions and at least 16 GiB for root). There is no LVM and no custom partitioning.
 
 ## Graphical installer (default)
 

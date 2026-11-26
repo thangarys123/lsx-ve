@@ -44,6 +44,10 @@ install -m 0644 "$PK/etc/libvirt-guests.sysconfig" /etc/sysconfig/libvirt-guests
 install -d -m 0755 /etc/systemd/logind.conf.d /etc/systemd/sleep.conf.d
 install -m 0644 "$PK/etc/lsxve-logind.conf" /etc/systemd/logind.conf.d/90-lsxve.conf
 install -m 0644 "$PK/etc/lsxve-sleep.conf" /etc/systemd/sleep.conf.d/90-lsxve.conf
+# LSX-VE logs: /var/log/lsxve (own "oslog" partition on installed hosts), rotated by size
+install -d -m 0755 /etc/rsyslog.d /etc/logrotate.d
+install -m 0644 "$PK/etc/lsxve-rsyslog.conf" /etc/rsyslog.d/40-lsxve-local.conf
+install -m 0644 "$PK/etc/lsxve-logrotate" /etc/logrotate.d/lsxve
 
 # service account and directories
 getent group libvirt >/dev/null || groupadd -r libvirt

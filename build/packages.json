@@ -76,6 +76,7 @@
     "net-tools",
     "nload",
     "rsyslog",
+    "logrotate",
     "net-snmp"
   ],
   "exclude": [

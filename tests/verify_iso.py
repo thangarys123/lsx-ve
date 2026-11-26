@@ -120,8 +120,13 @@ def main(path: str) -> int:
     except SyntaxError as e:
         check(False, f"%pre installer script compiles ({e})")
     check("Type the device name" in pre and 'MODE = "text"' in pre, "installer requires typed disk confirmation")
-    check("/lsxve/iso --fstype={FSTYPE}" in pre and 'FSTYPE = "ext4"' in pre and "sfdisk" in pre and "BOOT_GIB, SWAP_GIB, ISO_GIB, ROOT_MIN_GIB = 1, 1, 32, 16" in pre,
-          "fixed partition layout: boot 1G, swap 1G, isos 32G, root rest")
+    check("/lsxve/iso --fstype={FSTYPE}" in pre and 'FSTYPE = "ext4"' in pre and "sfdisk" in pre and "BOOT_GIB, SWAP_GIB, ISO_GIB, ROOT_MIN_GIB = 1, 1, 32, 16" in pre
+          and "LOG_MIB, ESP_MIB, BIOSBOOT_MIB = 250, 600, 2" in pre and "/var/log/lsxve --fstype" in pre,
+          "fixed GPT layout: boot 1G, swap 1G, isos 32G, oslog 250M, ESP/BIOS boot, root last")
+    check("rsyslog" in gks.split("services --enabled=", 1)[1].split("\n", 1)[0]
+          and "40-lsxve-local.conf" in read("/lsxve/install-lsxve.sh").decode()
+          and "logrotate.d/lsxve" in read("/lsxve/install-lsxve.sh").decode(),
+          "LSX-VE logs go to /var/log/lsxve (rsyslog rule, size-based logrotate)")
     check(".lsxve-datastore" in ks and ".lsxve-datastore" in gks, "datastore1 directory created on root")
     pk = ks.split("\n%packages", 1)[1].split("\n%end", 1)[0].splitlines()[1:]
     gpk = gks.split("\n%packages", 1)[1].split("\n%end", 1)[0].splitlines()[1:]

@@ -19,7 +19,7 @@ lang en_US.UTF-8
 keyboard --xlayouts=us
 selinux --enforcing
 firewall --enabled --service=ssh --port=443:tcp,80:tcp
-services --enabled=NetworkManager,chronyd,firewalld,sshd,tuned
+services --enabled=NetworkManager,chronyd,firewalld,sshd,tuned,rsyslog
 reboot --eject
 
 %include /tmp/lsxve-ks.cfg

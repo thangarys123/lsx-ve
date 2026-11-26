@@ -1,0 +1,15 @@
+# LSX-VE logs live on their own 250 MiB partition (/var/log/lsxve): rotate by size
+# so the partition never fills up (at most ~8 x 20 MiB per file, older ones compressed).
+/var/log/lsxve/*.log {
+    size 20M
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 root lsxve
+    sharedscripts
+    postrotate
+        /usr/bin/systemctl kill -s HUP rsyslog.service >/dev/null 2>&1 || true
+    endscript
+}

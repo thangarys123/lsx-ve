@@ -12,9 +12,11 @@ Expect first-boot issues to show up in Anaconda's `%pre`/`%post` steps or in SEL
   `product.img`. It has no LSX-VE hardware/virtualization check page (the text mode has one),
   and the web account is always `admin` with the root password.
 * The text-mode dialog runs on tty6 inside kickstart `%pre`; the graphical installer runs the disk
-  step there too, before the GUI starts. Both write a fixed ext4 layout with `sfdisk`: 1 `/boot` 1 GiB,
-  2 swap 1 GiB, 3 `/lsxve/iso` 32 GiB, 4 root = rest, 5 EFI system partition 600 MiB (UEFI only).
-  There is no
+  step there too, before the GUI starts. Both write a fixed GPT + ext4 layout with `sfdisk`: 1 `/boot` 1 GiB,
+  2 swap 1 GiB, 3 `/lsxve/iso` 32 GiB, 4 `/var/log/lsxve` 250 MiB, 5 EFI system partition 600 MiB
+  (UEFI) or BIOS boot 2 MiB (BIOS), 6 root = rest. Some very old BIOSes refuse to boot from GPT
+  disks. Only LSX-VE's own logs go to the 250 MiB log partition; the journal, `/var/log/messages`
+  and libvirt's per-VM QEMU logs stay on root. There is no
   LVM, no custom partitioning, no separate datastore partition, and no software RAID, multipath or
   iSCSI/FC boot. 1 GiB of swap is deliberately small: memory overcommit relies on RAM, not swap.
   Serial console installs are not supported.

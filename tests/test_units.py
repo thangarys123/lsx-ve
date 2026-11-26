@@ -136,50 +136,52 @@ class DiskLayout(unittest.TestCase):
         exec("import os\n" + consts + code, ns)
         cls.ns = ns
 
-    def test_bios_mbr(self):
+    def test_bios_layout(self):
         ns = self.ns
         label, parts = ns["plan"]("sda", 100 * 1024 ** 3, False)
-        self.assertEqual(label, "dos")
-        self.assertEqual([(n, mib) for n, mib, *_ in parts], [(1, 1024), (2, 1024), (3, 32768), (4, None)])
+        self.assertEqual(label, "gpt")
+        self.assertEqual([(n, mib) for n, mib, *_ in parts],
+                         [(1, 1024), (2, 1024), (3, 32768), (4, 250), (5, 2), (6, None)])
         ks = ns["partitioning"]("sda", 100 * 1024 ** 3, False)
-        self.assertEqual(ks[1:5], ["part /boot --fstype=ext4 --label=lsxve-boot --onpart=sda1", "part swap --onpart=sda2",
+        self.assertEqual(ks[1:7], ["part /boot --fstype=ext4 --label=lsxve-boot --onpart=sda1",
+                                   "part swap --onpart=sda2",
                                    "part /lsxve/iso --fstype=ext4 --label=lsxve-iso --onpart=sda3",
-                                   "part / --fstype=ext4 --label=lsxve-root --onpart=sda4"])
-        self.assertEqual(len(ks), 6)
+                                   "part /var/log/lsxve --fstype=ext4 --label=lsxve-log --onpart=sda4",
+                                   "part biosboot --fstype=biosboot --onpart=sda5",
+                                   "part / --fstype=ext4 --label=lsxve-root --onpart=sda6"])
         self.assertIn("ignoredisk --only-use=sda", ks)
         self.assertIn("bootloader --timeout=5 --boot-drive=sda", ks)
         sf = ns["sfdisk_script"]("sda", 100 * 1024 ** 3, False)
-        self.assertIn("label: dos", sf)
-        self.assertIn("/dev/sda1 : size=1024MiB, type=83, bootable", sf)
-        self.assertIn("/dev/sda2 : size=1024MiB, type=82", sf)
-        self.assertIn("/dev/sda3 : size=32768MiB, type=83", sf)
-        self.assertIn("/dev/sda4 : type=83", sf)
+        self.assertIn("label: gpt", sf)
+        self.assertIn("/dev/sda4 : size=250MiB, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4", sf)
+        self.assertIn("/dev/sda5 : size=2MiB, type=21686148-6449-6E6F-744E-656564454649", sf)
+        # root is the last partition and takes the rest, so it can be grown in place
+        self.assertTrue(sf.rstrip().splitlines()[-1].startswith("/dev/sda6 : type=4F68BCE3"))
         self.assertNotIn("xfs", " ".join(ks))
 
-    def test_uefi_esp_is_partition_5(self):
+    def test_uefi_layout_nvme(self):
         ns = self.ns
         size = 256 * 1024 ** 3
-        label, parts = ns["plan"]("nvme0n1", size, True)
-        self.assertEqual(label, "gpt")
-        self.assertEqual([p[0] for p in parts], [1, 2, 3, 4, 5])
-        self.assertEqual(parts[3][1], size // 1024 ** 2 - (34 * 1024 + 600 + 2))
         ks = ns["partitioning"]("nvme0n1", size, True)
-        self.assertEqual(ks[1], "part /boot --fstype=ext4 --label=lsxve-boot --onpart=nvme0n1p1")
-        self.assertEqual(ks[4], "part / --fstype=ext4 --label=lsxve-root --onpart=nvme0n1p4")
         self.assertEqual(ks[5], "part /boot/efi --fstype=efi --onpart=nvme0n1p5")
+        self.assertEqual(ks[6], "part / --fstype=ext4 --label=lsxve-root --onpart=nvme0n1p6")
         sf = ns["sfdisk_script"]("nvme0n1", size, True)
-        self.assertIn("/dev/nvme0n1p5 : type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B", sf)  # ESP, rest of disk
-        self.assertNotIn("bootable", sf)
-        self.assertIn("600.0 MiB", ns["layout_lines"]("nvme0n1", size, True)[5])
+        self.assertIn("/dev/nvme0n1p5 : size=600MiB, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B", sf)
+        self.assertTrue(sf.rstrip().splitlines()[-1].startswith("/dev/nvme0n1p6 : type="))
+        lines = ns["layout_lines"]("nvme0n1", size, True)
+        self.assertIn("oslog", lines[4])
+        self.assertIn("root", lines[6])
 
-    def test_bios_large_disk_gets_biosboot_as_5(self):
-        ns = self.ns
-        size = 3 * 1024 ** 4
-        label, parts = ns["plan"]("sdb", size, False)
-        self.assertEqual(label, "gpt")
-        self.assertEqual([p[0] for p in parts], [1, 2, 3, 4, 5])
-        self.assertEqual(parts[4][3], "part biosboot --fstype=biosboot")
-        self.assertEqual(parts[3][1], size // 1024 ** 2 - (34 * 1024 + 4))
+    def test_log_partition_config(self):
+        pk = ROOT / "packaging"
+        rs = (pk / "etc" / "lsxve-rsyslog.conf").read_text(encoding="utf-8")
+        self.assertIn('/var/log/lsxve/lsxve.log', rs)
+        self.assertIn('$programname startswith "lsxve"', rs)
+        lr = (pk / "etc" / "lsxve-logrotate").read_text(encoding="utf-8")
+        self.assertIn("size 20M", lr)
+        inst = (pk / "install-lsxve.sh").read_text(encoding="utf-8")
+        self.assertIn("/etc/rsyslog.d/40-lsxve-local.conf", inst)
+        self.assertIn("/etc/logrotate.d/lsxve", inst)
 
 
 class Validation(unittest.TestCase):

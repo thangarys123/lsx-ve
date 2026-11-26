@@ -58,11 +58,13 @@ network `default` a `forward mode="bridge"` network on `br0`. LXC containers att
 ## Storage layout on an installed host
 
 ```
-partition 1  1 GiB         /boot (ext4, label lsxve-boot)
+GPT, ext4:
+partition 1  1 GiB         /boot (label lsxve-boot)
 partition 2  1 GiB         swap
-partition 3  32 GiB        /lsxve/iso (ext4, label lsxve-iso)
-partition 4  rest          / (ext4, label lsxve-root)
-partition 5  600 MiB       /boot/efi (EFI system partition, UEFI only; 2 MiB BIOS boot on BIOS+GPT >2 TiB)
+partition 3  32 GiB        /lsxve/iso (label lsxve-iso)
+partition 4  250 MiB       /var/log/lsxve (label lsxve-log; rsyslog rule 40-lsxve-local.conf, logrotate 20M x 8)
+partition 5  600 MiB       /boot/efi (EFI system partition, UEFI) or 2 MiB BIOS boot (legacy BIOS)
+partition 6  rest          / (label lsxve-root) - last, grows with sfdisk -N 6 + resize2fs
 /lsxve/datastores/datastore1   directory on root (marker .lsxve-datastore; libvirt pool "datastore1")
 /lsxve/datastores/datastore1/containers   LXC containers (lxc.lxcpath; /var/lib/lxc without datastore1)
 /lsxve/iso                ISO library (libvirt pool "iso", SELinux virt_content_t)

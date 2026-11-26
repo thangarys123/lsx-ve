@@ -8,12 +8,14 @@
 # credentials for the first boot. The only disk write is the fixed LSX-VE
 # partition layout on the chosen disk, after the administrator has typed the
 # device name to confirm the erase:
-#     1  boot   1 GiB   (/boot ext4)
-#     2  swap   1 GiB
-#     3  isos  32 GiB   (/lsxve/iso ext4 - ISO library)
-#     4  root   rest    (/ ext4, holds datastore1)
-#     5  EFI system partition 600 MiB at the end of the disk (UEFI only; /boot/efi),
-#        or a 2 MiB BIOS boot partition (BIOS with a GPT disk > 2 TiB)
+# (GPT, ext4):
+#     1  boot    1 GiB    /boot
+#     2  swap    1 GiB
+#     3  isos   32 GiB    /lsxve/iso (ISO library)
+#     4  oslog 250 MiB    /var/log/lsxve (LSX-VE logs)
+#     5  firmware boot    EFI system partition 600 MiB (/boot/efi) on UEFI,
+#                         BIOS boot partition 2 MiB (GRUB) on legacy BIOS
+#     6  root    rest     / (holds datastore1) - last, so it can simply be grown
 # Anaconda then only formats these partitions (part --onpart).
 # The graphical installer (MODE "gui") runs only the disk step here; Anaconda's
 # GUI asks for everything else.
@@ -37,10 +39,9 @@ TTY = "/dev/tty6"
 GIB = 1024 ** 3
 MIB = 1024 ** 2
 BOOT_GIB, SWAP_GIB, ISO_GIB, ROOT_MIN_GIB = 1, 1, 32, 16
-MIN_DISK = (BOOT_GIB + SWAP_GIB + ISO_GIB + ROOT_MIN_GIB) * GIB
-ESP_MIB = 600
+LOG_MIB, ESP_MIB, BIOSBOOT_MIB = 250, 600, 2
+MIN_DISK = (BOOT_GIB + SWAP_GIB + ISO_GIB + ROOT_MIN_GIB + 1) * GIB
 FSTYPE = "ext4"
-MBR_LIMIT = 2 * 1024 ** 4   # msdos labels address at most 2 TiB (512-byte sectors)
 
 B, DIM, RED, GRN, YEL, CYA, RST = "\033[1m", "\033[2m", "\033[31;1m", "\033[32;1m", "\033[33;1m", "\033[36;1m", "\033[0m"
 
@@ -272,8 +273,8 @@ def step_disk(steps):
             if len(d["parts"]) > 4:
                 out(f"  {DIM}      `- ... {len(d['parts']) - 4} more partitions{RST}")
         out()
-        out(f"  {DIM}Fixed layout ({FSTYPE}): 1 boot {BOOT_GIB} GiB, 2 swap {SWAP_GIB} GiB, 3 ISO library {ISO_GIB} GiB, 4 root (rest)"
-            f"{', 5 EFI system partition' if hardware_uefi() else ''}.{RST}")
+        out(f"  {DIM}Fixed layout (GPT, {FSTYPE}): 1 boot {BOOT_GIB} GiB, 2 swap {SWAP_GIB} GiB, 3 ISO library {ISO_GIB} GiB,"
+            f" 4 logs {LOG_MIB} MiB, 5 {'EFI system' if hardware_uefi() else 'BIOS boot'}, 6 root (rest).{RST}")
         out(f"  {DIM}Other disks are left untouched and can be configured later as datastores.{RST}")
         i = choose("Install LSX-VE on disk number", len(ds))
         d = ds[i]
@@ -455,40 +456,30 @@ def part_name(disk, n):
 
 
 def plan(disk, size, uefi):
-    """The fixed LSX-VE layout. Returns (label, partitions); each partition is
-    (number, size_mib or None for the rest, sfdisk type, kickstart part line)."""
-    gpt = uefi or size > MBR_LIMIT
-    linux = "0FC63DAF-8483-4772-8E79-3D69D8477DE4" if gpt else "83"
-    parts = [(1, BOOT_GIB * 1024, linux, f"part /boot --fstype={FSTYPE} --label=lsxve-boot"),
-             (2, SWAP_GIB * 1024, "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F" if gpt else "82", "part swap"),
-             (3, ISO_GIB * 1024, linux, f"part /lsxve/iso --fstype={FSTYPE} --label=lsxve-iso"),
-             (4, None, "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709" if gpt else "83",
-              f"part / --fstype={FSTYPE} --label=lsxve-root")]
-    tail = None
+    """The fixed LSX-VE layout (always GPT). Returns (label, partitions); each partition is
+    (number, size_mib or None for the rest, sfdisk type GUID, kickstart part line)."""
+    linux = "0FC63DAF-8483-4772-8E79-3D69D8477DE4"
     if uefi:
-        # UEFI needs an EFI system partition; it is partition 5 at the end of the disk so 1-4 keep
-        # the fixed numbering (firmware finds it by its type GUID, not by position)
-        tail = (5, ESP_MIB, "C12A7328-F81F-11D2-BA4B-00A0C93EC93B", "part /boot/efi --fstype=efi")
-    elif gpt:
-        # BIOS boot from a GPT disk (> 2 TiB): GRUB needs a small "BIOS boot" partition
-        tail = (5, 2, "21686148-6449-6E6F-744E-656564454649", "part biosboot --fstype=biosboot")
-    if tail:
-        used = (BOOT_GIB + SWAP_GIB + ISO_GIB) * 1024 + tail[1] + 1 + 1   # + alignment, backup GPT
-        parts[3] = (4, size // MIB - used, parts[3][2], parts[3][3])
-        parts.append((5, None, tail[2], tail[3]))   # takes the rest (= tail size)
-    return ("gpt" if gpt else "dos"), parts
+        fw = (5, ESP_MIB, "C12A7328-F81F-11D2-BA4B-00A0C93EC93B", "part /boot/efi --fstype=efi")
+    else:
+        fw = (5, BIOSBOOT_MIB, "21686148-6449-6E6F-744E-656564454649", "part biosboot --fstype=biosboot")
+    return "gpt", [
+        (1, BOOT_GIB * 1024, linux, f"part /boot --fstype={FSTYPE} --label=lsxve-boot"),
+        (2, SWAP_GIB * 1024, "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F", "part swap"),
+        (3, ISO_GIB * 1024, linux, f"part /lsxve/iso --fstype={FSTYPE} --label=lsxve-iso"),
+        (4, LOG_MIB, linux, f"part /var/log/lsxve --fstype={FSTYPE} --label=lsxve-log"),
+        fw,
+        (6, None, "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709", f"part / --fstype={FSTYPE} --label=lsxve-root"),
+    ]
 
 
 def layout_lines(disk, size, uefi):
     label, parts = plan(disk, size, uefi)
     names = {1: f"boot (/boot, {FSTYPE})", 2: "swap", 3: f"isos (/lsxve/iso, {FSTYPE})",
-             4: f"root (/, {FSTYPE})", 5: "EFI system partition (/boot/efi)" if uefi else "BIOS boot (GRUB)"}
-    rest = size - sum(p[1] for p in parts if p[1]) * MIB
-    if uefi:
-        rest = ESP_MIB * MIB
-    elif len(parts) == 5:
-        rest = 2 * MIB
-    res = [f"partition table: {'GPT' if label == 'gpt' else 'MBR (msdos)'}"]
+             4: f"oslog (/var/log/lsxve, {FSTYPE})",
+             5: "EFI system partition (/boot/efi)" if uefi else "BIOS boot (GRUB)", 6: f"root (/, {FSTYPE})"}
+    rest = size - sum(p[1] for p in parts if p[1]) * MIB - 2 * MIB   # alignment + backup GPT
+    res = ["partition table: GPT"]
     for n, mib, _t, _ks in parts:
         res.append(f"/dev/{part_name(disk, n):<12} {human(mib * MIB if mib else rest):>10}  {names[n]}")
     return res
@@ -500,8 +491,6 @@ def sfdisk_script(disk, size, uefi):
     for n, mib, t, _ks in parts:
         f = [f"size={mib}MiB"] if mib else []
         f.append(f"type={t}")
-        if n == 1 and label == "dos":
-            f.append("bootable")
         lines.append(f"/dev/{part_name(disk, n)} : " + ", ".join(f))
     return "\n".join(lines) + "\n"
 

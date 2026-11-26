@@ -314,6 +314,14 @@ lxc.cgroup2.memory.max = 268435456
         self.assertEqual(i["memory_bytes"], 52428800)
         self.assertEqual(i["tx_bytes"], 100)
         self.assertEqual(lxc.parse_info("State: STOPPED")["state"], "stopped")
+        # "lxc-info -s -H" output: the bare value only (this was reported as "unknown")
+        self.assertEqual(lxc.parse_info("RUNNING\n")["state"], "running")
+        self.assertEqual(lxc.parse_info("STOPPED")["state"], "stopped")
+        src = (ROOT / "src" / "lsxve" / "ct" / "lxc.py").read_text(encoding="utf-8")
+        self.assertNotIn('"lxc-info", name, "-s", "-H"', src)
+        unit = (ROOT / "packaging" / "systemd" / "lsxve-ct@.service").read_text(encoding="utf-8")
+        self.assertIn("ExecStop=-/usr/bin/lxc-stop", unit)
+        self.assertIn("--logfile=/var/log/lsxve/lxc-%i.log", unit)
 
     def test_parse_index(self):
         idx = lxc.parse_index("debian;bookworm;amd64;default;20250101_05:24;/images/debian/bookworm/amd64/default/x\n"

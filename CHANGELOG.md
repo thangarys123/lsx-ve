@@ -11,6 +11,13 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
 ## [Unreleased]
 
 ### Fixed
+- **Containers were reported as "did not start (state unknown)" although they were running.**
+  The state was read with `lxc-info -s -H`, which prints only the bare value (`RUNNING`); the
+  parser expected `State: RUNNING`. The state check now uses `lxc-info -s` and the parser accepts
+  both forms.
+- `lsxve-ct@.service` no longer ends up "failed" when a container shuts itself down (`lxc-stop`
+  reporting "not running" is ignored). `lxc-start` writes warnings and errors to
+  `/var/log/lsxve/lxc-<name>.log`, and a failed start shows them in the web console.
 - **Container creation failed with `Missing required tool: tar`.** `tar` is not in Rocky's
   `@core`, and the LXC download template needs it. `tar`, `xz`, `gzip`, `bzip2` and `zstd` are now
   installed explicitly (all rootfs archive formats the UI accepts).

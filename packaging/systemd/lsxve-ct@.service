@@ -8,8 +8,10 @@ Wants=lxcfs.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/lxc-start -F -n %i
-ExecStop=/usr/bin/lxc-stop -n %i -t 90
+# warnings and errors of lxc-start go to the LSX-VE log partition (shown when a start fails)
+ExecStart=/usr/bin/lxc-start -F -n %i --logpriority=WARN --logfile=/var/log/lsxve/lxc-%i.log
+# "-": when the container shut itself down, lxc-stop reports "not running"; that is not a failure
+ExecStop=-/usr/bin/lxc-stop -n %i -t 90
 TimeoutStopSec=120
 KillMode=mixed
 Delegate=yes

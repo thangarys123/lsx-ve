@@ -256,7 +256,10 @@ def parse_info(text: str) -> dict:
     for line in text.splitlines():
         k, _, val = line.partition(":")
         k, val = k.strip(), val.strip()
-        if k == "State":
+        if not _ and k in STATES:
+            # "lxc-info -s -H" prints only the bare value ("RUNNING"), without "State:"
+            out["state"] = STATES[k]
+        elif k == "State":
             out["state"] = STATES.get(val, val.lower())
         elif k == "PID":
             out["pid"] = int(val) if val.isdigit() else None
@@ -281,7 +284,8 @@ def _info(name: str) -> dict:
 
 
 def _state(name: str) -> str:
-    cp = _lxc("lxc-info", name, "-s", "-H", timeout=15, check=False)
+    # no -H: with a single filter, -H makes lxc-info print only "RUNNING" (parse_info copes with both)
+    cp = _lxc("lxc-info", name, "-s", timeout=15, check=False)
     return parse_info(cp.stdout).get("state", "unknown") if cp.returncode == 0 else "unknown"
 
 
@@ -566,6 +570,20 @@ def _wait(name: str, states: Tuple[str, ...], timeout: float) -> str:
     return st
 
 
+def lxc_log(name: str) -> Path:
+    """lxc-start's own log (warnings and errors), written by lsxve-ct@.service."""
+    return Path("/var/log/lsxve") / f"lxc-{name}.log"
+
+
+def _lxc_log_tail(name: str, lines: int = 12) -> str:
+    try:
+        text = lxc_log(name).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    keep = [l for l in text.splitlines() if " ERROR " in l or " WARN " in l][-lines:]
+    return (" LXC log: " + " | ".join(l.split(" - ", 1)[-1] for l in keep))[-800:] if keep else ""
+
+
 def _start(name: str) -> None:
     unit = unit_name(name)
     proc.run(["/usr/bin/systemctl", "reset-failed", unit], timeout=15, check=False)
@@ -586,7 +604,8 @@ def action(name: str, action: str) -> dict:
         if st != "running":
             cp = proc.run(["/usr/bin/journalctl", "-u", unit_name(name), "-n", "20", "--no-pager", "-o", "cat"],
                           timeout=15, check=False)
-            raise CtError("conflict", f"{name} did not start (state {st}). {cp.stdout.strip()[-600:]}")
+            raise CtError("conflict", f"{name} did not start (state {st}). {cp.stdout.strip()[-400:]}"
+                                      f"{_lxc_log_tail(name)}")
     elif action in ("shutdown", "stop", "reboot"):
         if st == "stopped":
             return {"state": st, "message": f"{name} is not running"}

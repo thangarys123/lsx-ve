@@ -67,7 +67,7 @@ docs/               architecture, building, installation, security, QA, limitati
   from `src/`, then `npm run dev` in `web/` (see [docs/BUILDING.md](docs/BUILDING.md#development-mode)).
 
 Further reading: [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) ·
-[QA report](docs/QA.md) · [Known limitations](docs/LIMITATIONS.md)
+[QA report](docs/QA.md) · [Known limitations](docs/LIMITATIONS.md) · [Changelog](CHANGELOG.md)
 
 ## Licensing
 

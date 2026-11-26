@@ -6,6 +6,34 @@ management address, and you run it from a browser at `https://<management-ip>/`.
 workflow is modelled on VMware ESXi. The management stack is written from scratch for this
 project. It does not use Cockpit, Webmin or any other generic server panel.
 
+![Host dashboard](docs/images/host-dashboard.png)
+
+*Host client: host summary with hardware, configuration, VM counts, health and live CPU/memory
+charts, plus the recent tasks panel.*
+
+![Virtual machine summary](docs/images/vm-summary.png)
+
+*Virtual machine page in the vSphere layout: icon toolbar, tabs, guest OS console preview,
+QEMU guest agent details, usage, VM hardware and related objects.*
+
+> The screenshots show the real web console (`web/dist`) served with sample inventory data.
+
+## Highlights
+
+- **Own installer ISO** for UEFI and legacy BIOS, with a fixed GPT + ext4 layout. Disks are erased only after you type the device name.
+- **Local console (DCUI)** on tty1 with the management address, F2 configuration and network rollback.
+- **ESXi-style web console** built with React and TypeScript. It covers VMs (wizard, snapshots, clones, templates, OVA import/export, noVNC), LXC containers, datastores, virtual switches and port groups, alarms and RBAC.
+- **Safe by design.** Each request runs only through an allow-listed set of operations, and no shell is reachable from the browser. Network changes run inside NetworkManager checkpoints with automatic rollback. libvirt and QEMU are reachable only on local sockets.
+- **Laptop-friendly host:** the host never suspends, ignores the lid and turns off the console display after 10 minutes.
+
+## Requirements
+
+- x86_64 CPU with Intel VT-x or AMD-V. Nested virtualization works on VMware Workstation/ESXi.
+- At least 4 GiB RAM and a disk of at least 51 GiB.
+- One wired network adapter for management.
+
+## Architecture
+
 ```
 ┌────────────── Browser (React + TypeScript web console, noVNC) ──────────────┐
 │ HTTPS :443  REST /api/v1/*  ·  WebSocket /api/v1/ws (live)  ·  /api/v1/console│

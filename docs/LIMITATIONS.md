@@ -82,6 +82,9 @@ Expect first-boot issues to show up in Anaconda's `%pre`/`%post` steps or in SEL
   without a limit). It cannot be changed later from the web console. The image is thin (sparse),
   so the datastore can be overcommitted; creation only checks that the size is free right now.
   Root password and network files inside an image are written only while the container is stopped.
+* A container gets its root password at creation (required). It can be started only after the
+  *Create container* task has finished; an interrupted creation leaves an *Incomplete* container
+  that can only be deleted.
 * One network interface (eth0, veth on a host bridge). A static IPv4 is set by LXC and also
   written into the container's own network configuration before every start (systemd-networkd,
   netplan, ifupdown, network-scripts or a NetworkManager keyfile, whichever the image has), with

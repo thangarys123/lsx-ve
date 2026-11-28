@@ -387,7 +387,8 @@ def _summary(name: str, with_info: bool = True) -> dict:
     info = _info(name) if with_info else {"state": "unknown", "ips": []}
     return {
         "name": name,
-        "state": info.get("state", "unknown"),
+        # "creating" / "incomplete" until create() has finished: the container cannot be started yet
+        "state": creation_state(name) or info.get("state", "unknown"),
         "pid": info.get("pid"),
         "ips": info.get("ips", []),
         "cpu_ns": info.get("cpu_ns"),
@@ -788,7 +789,10 @@ def validate_spec(spec: dict) -> dict:
     out["unprivileged"] = v.boolean(spec.get("unprivileged", True), "unprivileged")
     out["autostart"] = v.boolean(spec.get("autostart", False), "autostart")
     out["start"] = v.boolean(spec.get("start", False), "start")
-    out["root_password"] = v.password(spec["root_password"], "root_password") if spec.get("root_password") else ""
+    # required: without it nobody can log in on the console of a new container
+    if not spec.get("root_password"):
+        raise ValidationError("root_password", "is required (the root password inside the container)")
+    out["root_password"] = v.password(spec["root_password"], "root_password")
     out["created_by"] = v.string(spec.get("created_by", ""), "created_by", 0, 64)
     return out
 
@@ -799,9 +803,56 @@ def _resource_keys(memory_mib: int, cpus: int) -> Dict[str, Optional[str]]:
             K_CPU: f"{cpus * 100000} 100000" if cpus else None}
 
 
+# --------------------------------------------------------------------------- creation state
+# A container may be used only after create() has finished completely (image downloaded, disk
+# prepared, configuration and root password written). Containers being created by this agent are
+# in _creating; a creation that never finished (agent restarted, host rebooted, power loss) leaves
+# "creating" in lsxve.json or LXC's own "partial" marker - such a container can only be deleted.
+_creating: set = set()
+_creating_lock = threading.Lock()
+
+
+def creation_state(name: str) -> Optional[str]:
+    """None when the container is ready, otherwise "creating" or "incomplete"."""
+    with _creating_lock:
+        if name in _creating:
+            return "creating"
+    if _read_meta(name).get("creating") or (_dir(name) / "partial").exists():
+        return "incomplete"
+    return None
+
+
+def _need_ready(name) -> str:
+    name = _need(name)
+    cs = creation_state(name)
+    if cs == "creating":
+        raise CtError("conflict", f"Container {name} is still being created (downloading and preparing the image). "
+                                  "Wait until the task 'Create container' has finished.")
+    if cs == "incomplete":
+        raise CtError("conflict", f"Creation of container {name} did not finish. Delete it and create it again.")
+    return name
+
+
 def create(spec: dict) -> dict:
     s = validate_spec(spec)
     _require_lxc()
+    name = s["name"]
+    with _creating_lock:
+        if name in _creating:
+            raise CtError("conflict", f"Container '{name}' is already being created")
+        _creating.add(name)
+    try:
+        summary = _create(s)
+    finally:
+        with _creating_lock:
+            _creating.discard(name)
+    if s["start"]:
+        action(name, "start")
+        summary = _summary(name)
+    return {"message": f"Container {name} created", **summary}
+
+
+def _create(s: dict) -> dict:
     name = s["name"]
     if _exists(name) or _dir(name).exists():
         raise CtError("conflict", f"A container named '{name}' already exists")
@@ -834,12 +885,14 @@ def create(spec: dict) -> dict:
                      timeout=1800)
             finally:
                 tmp.unlink(missing_ok=True)
+            _write_meta(name, {"creating": True, "created_by": s["created_by"]})   # persists if we are interrupted
             label = f"{src['distro']} {src['release']} ({src['variant']})"
         else:
             f = config.ISO_DIR / s["source"]["file"]
             if not f.is_file() or f.is_symlink() or f.parent != config.ISO_DIR:
                 raise ValidationError("source.file", "archive not found in the ISO library")
             d.mkdir(mode=0o755)
+            _write_meta(name, {"creating": True, "created_by": s["created_by"]})   # persists if we are interrupted
             cfg = _base_config(name, s["bridge"], s["unprivileged"], include_common=True)
             if s["disk_gib"]:
                 img = d / DISK_IMAGE
@@ -865,9 +918,9 @@ def create(spec: dict) -> dict:
                         K_LINK: s["bridge"]})
         set_keys(name, changes)
         with _rootfs_dir(name) as rootfs:
-            if s["root_password"]:
-                set_root_password(rootfs, s["root_password"])
+            set_root_password(rootfs, s["root_password"])
             os_name = os_release(rootfs)
+        # the last step: without "creating" the container is ready to be started
         _write_meta(name, {"description": s["description"], "created": time.time(), "created_by": s["created_by"],
                            "source": s["source"], "source_label": label, "os": os_name,
                            "disk_gib": s["disk_gib"] or None})
@@ -878,9 +931,7 @@ def create(spec: dict) -> dict:
             shutil.rmtree(d, ignore_errors=True)
         raise
     LOG.info("container %s created from %s", name, label)
-    if s["start"]:
-        action(name, "start")
-    return {"message": f"Container {name} created", **_summary(name)}
+    return _summary(name)
 
 
 # --------------------------------------------------------------------------- lifecycle
@@ -918,7 +969,7 @@ def _start(name: str) -> None:
 
 
 def action(name: str, action: str) -> dict:
-    name = _need(name)
+    name = _need_ready(name)
     action = v.choice(action, "action", ACTIONS)
     st = _state(name)
     if action == "start":
@@ -968,7 +1019,7 @@ def _need_stopped(name: str, what: str) -> None:
 
 
 def update(name: str, changes: dict) -> dict:
-    name = _need(name)
+    name = _need_ready(name)
     if not isinstance(changes, dict) or not changes:
         raise ValidationError("body", "no changes supplied")
     keys: Dict[str, Optional[str]] = {}
@@ -1015,6 +1066,8 @@ def update(name: str, changes: dict) -> dict:
 
 def delete(name: str) -> dict:
     name = _need(name)
+    if creation_state(name) == "creating":   # an unfinished ("incomplete") container may be deleted
+        raise CtError("conflict", f"Container {name} is still being created; wait until the task has finished")
     _need_stopped(name, "delete it")
     _lxc("lxc-destroy", name, "-s", timeout=1800)
     proc.run(["/usr/bin/systemctl", "reset-failed", unit_name(name)], timeout=15, check=False)
@@ -1023,7 +1076,7 @@ def delete(name: str) -> dict:
 
 
 def clone(name: str, new_name: str) -> dict:
-    name = _need(name)
+    name = _need_ready(name)
     new = ct_name(new_name, "new_name")
     if _exists(new) or _dir(new).exists():
         raise CtError("conflict", f"A container named '{new}' already exists")
@@ -1060,7 +1113,7 @@ def snapshots(name: str) -> List[dict]:
 
 
 def snapshot_create(name: str, comment: str = "") -> dict:
-    name = _need(name)
+    name = _need_ready(name)
     comment = v.text(comment or "", "comment", 500)
     _need_stopped(name, "take a snapshot")
     args = []
@@ -1086,7 +1139,7 @@ def _snap(name: str, snap) -> str:
 
 
 def snapshot_restore(name: str, snapshot: str) -> dict:
-    name = _need(name)
+    name = _need_ready(name)
     snap = _snap(name, snapshot)
     _need_stopped(name, "restore a snapshot")
     _lxc("lxc-snapshot", name, "-r", snap, timeout=3600)
@@ -1094,7 +1147,7 @@ def snapshot_restore(name: str, snapshot: str) -> dict:
 
 
 def snapshot_delete(name: str, snapshot: str) -> dict:
-    name = _need(name)
+    name = _need_ready(name)
     snap = _snap(name, snapshot)
     _lxc("lxc-snapshot", name, "-d", snap, timeout=1800)
     return {"message": f"Snapshot {snap} of {name} deleted"}
@@ -1103,9 +1156,9 @@ def snapshot_delete(name: str, snapshot: str) -> dict:
 # --------------------------------------------------------------------------- console
 def open_console(name: str, cols: int = 80, rows: int = 24) -> Tuple[dict, int]:
     """Start lxc-console on a new pty; returns (info, master fd) - the caller passes the fd to the API."""
+    name = _need_ready(name)
     import fcntl
     import termios
-    name = _need(name)
     cols = v.integer(cols, "cols", 10, 1000)
     rows = v.integer(rows, "rows", 5, 500)
     if _state(name) != "running":

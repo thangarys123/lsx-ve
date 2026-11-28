@@ -10,7 +10,26 @@ import { bytes, cls, mib, ts } from "../util";
 
 const CT_LABEL: Record<string, string> = {
   running: "Running", stopped: "Stopped", frozen: "Frozen", starting: "Starting", stopping: "Stopping", unknown: "Unknown",
+  creating: "Creating", incomplete: "Incomplete",
 };
+
+// same rule as the backend (lsxve.common.validate.password)
+function passwordProblem(pw: string): string | null {
+  if (!pw) return "Root password is required.";
+  if (pw.length < 8 || pw.length > 256) return "Root password: 8-256 characters.";
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length;
+  if (classes < 3) return "Root password: use at least 3 of lowercase, uppercase, digit, symbol.";
+  return null;
+}
+
+// a container being created (or whose creation never finished) cannot be used yet
+function CreationNotice({ state }: { state: string }) {
+  if (state === "creating")
+    return <div className="alert info"><Icon name="info" /><div>The container is being created: the image is downloaded and prepared. It can be started when the task <b>Create container</b> has finished.</div></div>;
+  if (state === "incomplete")
+    return <div className="alert err"><Icon name="error" /><div>Creation of this container did not finish (for example the host restarted meanwhile). It cannot be started; delete it and create it again.</div></div>;
+  return null;
+}
 
 export function CtState({ state }: { state: string }) {
   return <span className={cls("status", state)}>{CT_LABEL[state] ?? state}</span>;
@@ -41,10 +60,10 @@ function CtPowerButtons({ ct, onChanged }: { ct: Ct | null; onChanged: () => voi
   return (
     <>
       {can("ct.power") && <>
-        <Btn icon="play" disabled={!ct || st !== "stopped"} onClick={() => power("start")}>Start</Btn>
+        <Btn icon="play" disabled={!ct || st !== "stopped"} title={st === "creating" ? "The container is still being created" : st === "incomplete" ? "Creation did not finish - delete the container" : undefined} onClick={() => power("start")}>Start</Btn>
         <Btn icon="power" disabled={!ct || st !== "running"} onClick={() => power("shutdown")}>Shut down</Btn>
         <Btn icon="restart" disabled={!ct || st !== "running"} onClick={() => power("reboot")}>Restart</Btn>
-        <Dropdown label="Power" icon="more" disabled={!ct || st === "stopped"} items={[
+        <Dropdown label="Power" icon="more" disabled={!ct || !(st === "running" || st === "frozen")} items={[
           { label: "Freeze", icon: "pause", disabled: st !== "running", onClick: () => power("freeze") },
           { label: "Resume", icon: "play", disabled: st !== "frozen", onClick: () => power("unfreeze") },
           "sep",
@@ -92,7 +111,7 @@ export function ContainerList() {
           { label: "Edit settings", icon: "edit", onClick: () => nav(`/containers/${enc(one!.name)}?tab=config`) },
           { label: "Clone", icon: "clone", disabled: one?.state !== "stopped", onClick: () => setDlg("clone") },
           "sep",
-          { label: "Delete", icon: "trash", danger: true, disabled: one?.state !== "stopped", onClick: () => setDlg("delete") },
+          { label: "Delete", icon: "trash", danger: true, disabled: !(one?.state === "stopped" || one?.state === "incomplete"), onClick: () => setDlg("delete") },
         ]} />}
         <div className="grow" />
         <input type="search" placeholder="Search" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ width: 200 }} />
@@ -183,7 +202,9 @@ function CreateContainer({ status, onClose }: { status: any; onClose: () => void
   if (srcType === "tarball" && !file) errs.push("Upload a rootfs archive to the ISO library first (Storage → ISO library).");
   if (!bridge) errs.push("A network bridge is required.");
   if (ipMode === "static" && !/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(ipv4)) errs.push("Static address must include the prefix, e.g. 192.168.1.20/24.");
-  if (pw1 && pw1 !== pw2) errs.push("Root passwords do not match.");
+  const pwErr = passwordProblem(pw1);
+  if (pwErr) errs.push(pwErr);
+  else if (pw1 !== pw2) errs.push("Root passwords do not match.");
 
   const submit = async () => {
     const body: any = {
@@ -191,7 +212,7 @@ function CreateContainer({ status, onClose }: { status: any; onClose: () => void
       source: srcType === "download" ? { type: "download", distro, release, variant } : { type: "tarball", file },
       ipv4: ipMode === "dhcp" ? "dhcp" : ipv4, gateway: ipMode === "static" ? gw : "",
     };
-    if (pw1) body.root_password = pw1;
+    body.root_password = pw1;
     const r = await run(() => api.post("/api/v1/containers", body), `Creating container ${name}`);
     if (r) onClose();
   };
@@ -267,10 +288,13 @@ function CreateContainer({ status, onClose }: { status: any; onClose: () => void
             <Field label="Address/prefix"><input type="text" className="mono" placeholder="192.168.1.50/24" value={ipv4} onChange={(e) => setIpv4(e.target.value)} /></Field>
             <Field label="Gateway"><input type="text" className="mono" placeholder="192.168.1.1" value={gw} onChange={(e) => setGw(e.target.value)} /></Field>
           </div>}
-          <Field label="Root password" help="Optional. Sets the root password inside the container, so you can log in on the console.">
-            <input type="password" autoComplete="new-password" value={pw1} onChange={(e) => setPw1(e.target.value)} />
+          <Field label="Root password *" help="Required. The root password inside the container, for logging in on the console. At least 8 characters and 3 of: lowercase, uppercase, digit, symbol."
+            error={pw1 ? passwordProblem(pw1) : null}>
+            <input type="password" autoComplete="new-password" required value={pw1} onChange={(e) => setPw1(e.target.value)} />
           </Field>
-          {pw1 && <Field label="Confirm root password"><input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>}
+          <Field label="Confirm root password *" error={pw2 && pw1 !== pw2 ? "Passwords do not match" : null}>
+            <input type="password" autoComplete="new-password" required value={pw2} onChange={(e) => setPw2(e.target.value)} />
+          </Field>
           <label className="check"><input type="checkbox" checked={unpriv} onChange={(e) => setUnpriv(e.target.checked)} /> Unprivileged container (recommended)</label>
           {!unpriv && <div className="alert warn"><Icon name="warn" /><div>In a privileged container, root inside the container is root on the host. Use it only for trusted workloads.</div></div>}
           <label className="check"><input type="checkbox" checked={autostart} onChange={(e) => setAutostart(e.target.checked)} /> Start automatically with the host</label>
@@ -332,11 +356,12 @@ export function ContainerDetail() {
         {can("ct.manage") && <Dropdown label="Actions" icon="more" items={[
           { label: "Clone", icon: "clone", disabled: ct.state !== "stopped", onClick: () => setDlg("clone") },
           "sep",
-          { label: "Delete", icon: "trash", danger: true, disabled: ct.state !== "stopped", onClick: () => setDlg("delete") },
+          { label: "Delete", icon: "trash", danger: true, disabled: !(ct.state === "stopped" || ct.state === "incomplete"), onClick: () => setDlg("delete") },
         ]} />}
         <div className="grow" />
         <Btn icon="refresh" onClick={reload}>Refresh</Btn>
       </div>
+      <CreationNotice state={ct.state} />
       <div className="hero">
         <div className="big-icon"><Icon name="container" size={26} /></div>
         <div>

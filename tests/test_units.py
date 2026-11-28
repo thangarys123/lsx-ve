@@ -333,7 +333,7 @@ lxc.cgroup2.memory.max = 268435456
 
     def test_validate_spec(self):
         good = {"name": "web1", "source": {"type": "download", "distro": "debian", "release": "bookworm"},
-                "bridge": "virbr0", "memory_mib": 512, "cpus": 2}
+                "bridge": "virbr0", "memory_mib": 512, "cpus": 2, "root_password": "Ctr-Pass1"}
         s = lxc.validate_spec(good)
         self.assertTrue(s["unprivileged"])
         self.assertEqual(s["ipv4"], "dhcp")
@@ -633,7 +633,7 @@ class ContainerDiskSize(unittest.TestCase):
 
     def spec(self, **kw):
         d = {"name": "web1", "source": {"type": "download", "distro": "debian", "release": "trixie"},
-             "bridge": "br0"}
+             "bridge": "br0", "root_password": "Ctr-Pass1"}
         d.update(kw)
         return lxc.validate_spec(d)
 
@@ -667,6 +667,70 @@ class ContainerDiskSize(unittest.TestCase):
         ui = (ROOT / "web" / "src" / "pages" / "Containers.tsx").read_text(encoding="utf-8")
         self.assertIn("disk_gib: diskGiB", ui)
         self.assertIn('label="Disk size"', ui)
+
+
+class ContainerCreationGuard(unittest.TestCase):
+    """No container without a root password; no use of a container before its creation has finished."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.saved = (lxc.lxcpath, lxc._require_lxc)
+        lxc.lxcpath = lambda: self.tmp.name
+        lxc._require_lxc = lambda: None
+        d = Path(self.tmp.name) / "web1"
+        d.mkdir()
+        (d / "config").write_text("lxc.rootfs.path = dir:/x\n")
+        self.dir = d
+
+    def tearDown(self):
+        lxc.lxcpath, lxc._require_lxc = self.saved
+        lxc._creating.discard("web1")
+        self.tmp.cleanup()
+
+    def test_root_password_required(self):
+        spec = {"name": "web1", "source": {"type": "download", "distro": "debian", "release": "trixie"}, "bridge": "br0"}
+        for pw in (None, "", "weakpass1"):
+            with self.assertRaises(v.ValidationError):
+                lxc.validate_spec({**spec, "root_password": pw} if pw is not None else spec)
+        self.assertEqual(lxc.validate_spec({**spec, "root_password": "Ctr-Pass1"})["root_password"], "Ctr-Pass1")
+
+    def test_states(self):
+        self.assertIsNone(lxc.creation_state("web1"))
+        lxc._creating.add("web1")
+        self.assertEqual(lxc.creation_state("web1"), "creating")
+        lxc._creating.discard("web1")
+        lxc._write_meta("web1", {"creating": True})
+        self.assertEqual(lxc.creation_state("web1"), "incomplete")
+        lxc._write_meta("web1", {"created": 1})
+        self.assertIsNone(lxc.creation_state("web1"))
+        (self.dir / "partial").write_text("")        # LXC's own marker of an unfinished lxc-create
+        self.assertEqual(lxc.creation_state("web1"), "incomplete")
+
+    def test_blocked_while_creating(self):
+        lxc._creating.add("web1")
+        for call in (lambda: lxc.action("web1", "start"), lambda: lxc.update("web1", {"autostart": True}),
+                     lambda: lxc.clone("web1", "web2"), lambda: lxc.snapshot_create("web1"),
+                     lambda: lxc.open_console("web1"), lambda: lxc.delete("web1")):
+            with self.assertRaises(lxc.CtError) as e:
+                call()
+            self.assertEqual(e.exception.kind, "conflict")
+            self.assertIn("being created", str(e.exception))
+
+    def test_incomplete_cannot_start(self):
+        lxc._write_meta("web1", {"creating": True})
+        with self.assertRaises(lxc.CtError) as e:
+            lxc.action("web1", "start")
+        self.assertIn("did not finish", str(e.exception))
+
+    def test_create_marks_and_ui(self):
+        src = (ROOT / "src" / "lsxve" / "ct" / "lxc.py").read_text(encoding="utf-8")
+        body = src.split("def _create(s: dict) -> dict:", 1)[1].split("\ndef ", 1)[0]
+        self.assertEqual(body.count('_write_meta(name, {"creating": True'), 2)   # download and tarball
+        self.assertIn("set_root_password(rootfs, s[\"root_password\"])", body)
+        ui = (ROOT / "web" / "src" / "pages" / "Containers.tsx").read_text(encoding="utf-8")
+        self.assertIn("passwordProblem(pw1)", ui)
+        self.assertIn('creating: "Creating"', ui)
 
 
 class HostHygiene(unittest.TestCase):

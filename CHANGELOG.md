@@ -11,6 +11,13 @@ smoke test, the dev-mode web UI and the ISO structure check, **not** on a real i
 ## [Unreleased]
 
 ### Added
+- **A container needs a root password.** *Create container* requires the root password (with
+  confirmation, at least 8 characters and 3 of lowercase, uppercase, digit, symbol); the API and the
+  agent refuse a container without one.
+- **A container can be used only after it has been fully created.** While the image is downloaded
+  and prepared, the container shows *Creating* and cannot be started, edited, cloned, snapshotted or
+  deleted. A creation that never finished (agent restart, host reboot) shows *Incomplete*; such a
+  container can only be deleted.
 - **Disk size for containers.** *Create container* has a *Disk size* field (default 8 GiB): the
   root file system is an ext4 disk image of that size (LXC `loop` backend), for image-server and
   rootfs-archive containers. 0 keeps the old behaviour (a directory without a limit). The free

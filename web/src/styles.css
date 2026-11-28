@@ -159,6 +159,8 @@ table.dt .empty { text-align: center; color: var(--muted); padding: 22px; }
 .status.warning::before, .status.queued::before, .status.shutting-down::before { background: var(--warn); }
 .status.error::before, .status.crashed::before, .status.critical::before, .status.failed::before { background: var(--err); }
 .status.running-task::before { background: var(--info); animation: pulse 1.2s infinite; }
+.status.creating::before { background: var(--info); animation: pulse 1.2s infinite; }
+.status.incomplete::before { background: var(--err); }
 @keyframes pulse { 50% { opacity: .35; } }
 .badge { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 17px; background: var(--panel-3); color: var(--text-2); border: 1px solid var(--border-2); white-space: nowrap; }
 .badge.blue { background: var(--accent-soft); color: #9cc4ff; border-color: #2a4c7f; }
